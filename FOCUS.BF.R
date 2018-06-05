@@ -29,8 +29,13 @@ log_sum_exp <- function(a, b) {
 annotate_cred_set <- function(df, prb=0.90) {
     # the call to abs  function may seem weird, but there is numerical issues with 1 - cumsum for strange reason.
     # w/o it sometimes small negative numbers appear and throw off CS computation
-    return (df %>% group_by(BLOCK) %>% mutate(NPIP=PIP / sum(PIP)) %>% group_by(BLOCK) %>% arrange(BLOCK, NPIP) %>%
-            mutate(IN.CRED.SET=abs((1 - cumsum(NPIP))) <= prb) %>% select(-NPIP))
+    df %>% group_by(BLOCK) %>%
+           mutate(NPIP=PIP / sum(PIP)) %>%
+           group_by(BLOCK) %>%
+           arrange(BLOCK, NPIP) %>%
+           group_by(BLOCK) %>%
+           mutate(IN.CRED.SET=abs((1 - cumsum(NPIP))) <= prb) %>%
+           select(-NPIP)
 }
 
 get_independent <- function(CHR, ID, P0, P1, regions) {
