@@ -1,9 +1,8 @@
-suppressMessages(library(dplyr))
-suppressMessages(library(mvnfast))
-suppressMessages(library(optparse))
-suppressMessages(library(plink2R))
-suppressMessages(library(purrr))
-suppressMessages(library(GenomicRanges))
+suppressMessages(library('dplyr'))
+suppressMessages(library('plink2R'))
+suppressMessages(library("optparse"))
+suppressMessages(library("GenomicRanges"))
+suppressMessages(library("mvnfast"))
 
 LOG_INFO <- "INFO"
 LOG_WARNING <- "WARNING"
@@ -29,13 +28,8 @@ log_sum_exp <- function(a, b) {
 annotate_cred_set <- function(df, prb=0.90) {
     # the call to abs  function may seem weird, but there is numerical issues with 1 - cumsum for strange reason.
     # w/o it sometimes small negative numbers appear and throw off CS computation
-    df %>% group_by(BLOCK) %>%
-           mutate(NPIP=PIP / sum(PIP)) %>%
-           group_by(BLOCK) %>%
-           arrange(BLOCK, NPIP) %>%
-           group_by(BLOCK) %>%
-           mutate(IN.CRED.SET=abs((1 - cumsum(NPIP))) <= prb) %>%
-           select(-NPIP)
+    return (df %>% group_by(BLOCK) %>% mutate(NPIP=PIP / sum(PIP)) %>% group_by(BLOCK) %>% arrange(BLOCK, NPIP) %>%
+            mutate(IN.CRED.SET=abs((1 - cumsum(NPIP))) <= prb) %>% select(-NPIP))
 }
 
 get_independent <- function(CHR, ID, P0, P1, regions) {
@@ -66,13 +60,9 @@ get_local_params <- function(cur.FILE, cur.ID, cur.MODEL, genos) {
         load( cur.FILE[i] )
         wgt.matrix[is.na(wgt.matrix)] = 0
 
-
         # Match up the SNPs and weights
         m = match( snps[,2] , genos$bim[,2] )
         m.keep = !is.na(m)
-        if (all(!m.keep)) {
-            NULL
-        }
         snps = snps[m.keep,]
         wgt.matrix = wgt.matrix[m.keep,]
 
@@ -103,11 +93,9 @@ get_local_params <- function(cur.FILE, cur.ID, cur.MODEL, genos) {
     }
     rownames(W) <- snps
 
-
     # scale weights and compute LD
     m <- match(rownames(W), genos$bim[, 2])
     X <- genos$bed[,m]
-
     S <- apply(X %*% W, 2, sd)
     if (length(S) == 1) {
         flags <- S != 0
@@ -119,25 +107,20 @@ get_local_params <- function(cur.FILE, cur.ID, cur.MODEL, genos) {
         flags <- S != 0
         S <- S[flags]
         W <- W[, flags]
-        if (sum(flags) == 1) {
-            S <- t(t(1 / S))
-        } else {
-            S <- diag(1 / S)
-        }
+        S <- diag(1 / S)
     }
     SW <- W %*% S
-    LD <- cor(X) + diag(ncol(X)) * 0.01
+    LD <- cor(X)
 
     return (list(SW=SW, LD=LD, FLAGS=flags))
 }
 
-fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F, compute.grad=F, posterior_check=0, verbose=F) {
+fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F, compute.grad=F, posterior_check=0, tol=2.220446e-14, verbose=F) {
 
     # check length
     m <- length(cur.Z)
     if (m > 1) {
         S <- t(cur.W) %*% cur.LD %*% cur.W
-        S <- S + diag(m) * 0.01
     } else {
         S <- t(1)
     }
@@ -169,60 +152,60 @@ fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F
             Zp <- cur.Z
         }
 
-        PIP <- rep(0, m) 
-        NULL.PIP <- m * log(1 - prb)
-        log.marginal <- NULL.PIP # initialize with NULL prior-weighted BF
-        k <- min(5, m)
+        pip <- rep(0, m) 
+        null.pip <- m * log(1 - prb)
+        log.marginal <- null.pip # initialize with NULL prior-weighted BF
 
         if (compute.grad) {
             cur.grad <- 0
             cur.hess <- 0
         }
 
-        #k <- m
+        k <- min(5, m) # this needs to be a parameter at some point
         pset <- unlist(sapply(1:k, function(x) combn(m, x, simplify=F)), recursive=F)
         for (idx_set in pset) {
             # only need genes in the causal configuration using FINEMAP BF trick
-            nc <- length(idx_set)
-            cur.chi2 <- prior_chisq / nc
-            cur.D <- diag(nc) * cur.chi2
             cur.S <- S[idx_set, idx_set]
             cur.Zp <- Zp[idx_set]
 
             # compute SVD for robust estimation
+            # if rank deficient, drop corresponding eigenvectors/values
             res <- svd(cur.S)
-            cur.EIG <- res$d
-            cur.U <- res$u
+            keep <- res$d > tol
+            nc <- sum(keep)
+            cur.eig <- res$d[keep]
+            cur.U <- res$u[,keep]
+            cur.chi2 <- prior_chisq / nc
             cur.scaled.Zp <- (t(cur.Zp) %*% cur.U)^2
 
             # log BF + log prior
-            cur.log.BF <- 0.5 * -sum(log(1 + cur.chi2 * cur.EIG)) +
-                          0.5 *  sum((cur.chi2 / (1 + cur.chi2 * cur.EIG)) * cur.scaled.Zp) +
+            cur.log.BF <- 0.5 * -sum(log(1 + cur.chi2 * cur.eig)) +
+                          0.5 *  sum((cur.chi2 / (1 + cur.chi2 * cur.eig)) * cur.scaled.Zp) +
                           nc * log(prb) + (m - nc) * log(1 - prb)
 
             # keep track for marginal likelihood
             log.marginal <- log_sum_exp(log.marginal, cur.log.BF)
 
             if (compute.grad) {
-                cur.grad <- cur.grad + exp(cur.log.BF) * 0.5 * (-sum(cur.EIG / (nc + prior_chisq * cur.EIG)) + 
-                                                                sum(nc * cur.scaled.Zp / (nc + prior_chisq * cur.EIG)^2))
-                cur.hess <- cur.hess + exp(cur.log.BF) * (sum(cur.EIG^2 / (nc + prior_chisq * cur.EIG)^2) -
-                                                          sum((nc * cur.EIG * cur.scaled.Zp) / (nc + prior_chisq * cur.EIG)^3))
+                cur.grad <- cur.grad + exp(cur.log.BF) * 0.5 * (-sum(cur.eig / (nc + prior_chisq * cur.eig)) + 
+                                                                sum(nc * cur.scaled.Zp / (nc + prior_chisq * cur.eig)^2))
+                cur.hess <- cur.hess + exp(cur.log.BF) * (sum(cur.eig^2 / (nc + prior_chisq * cur.eig)^2) -
+                                                          sum((nc * cur.eig * cur.scaled.Zp) / (nc + prior_chisq * cur.eig)^3))
             } 
 
-            # marginalize the posterior for marginal-posterior-inclusion probability (PIP) on causals
+            # marginalize the posterior for marginal-posterior-inclusion probability (pip) on causals
             for (idx in idx_set) {
-                if (PIP[idx] == 0) {
-                    PIP[idx] <- cur.log.BF
+                if (pip[idx] == 0) {
+                    pip[idx] <- cur.log.BF
                 } else {
-                    PIP[idx] <- log_sum_exp(PIP[idx], cur.log.BF)
+                    pip[idx] <- log_sum_exp(pip[idx], cur.log.BF)
                 }
             }
         }
         
-        # convert logPIPs to PIPs
-        PIP <- exp(PIP - log.marginal)
-        NULL.PIP <- exp(NULL.PIP - log.marginal)
+        # convert logpips to pips
+        pip <- exp(pip - log.marginal)
+        null.pip <- exp(null.pip - log.marginal)
 
         if (compute.grad) {
             cur.grad <- cur.grad / exp(log.marginal)
@@ -235,7 +218,7 @@ fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F
             sim.mu <- mu
             simulation <- bind_rows(lapply(1:posterior_check,
                                            function(x) {
-                                               sim.caus <- rbinom(n=m, size=1, prob=PIP)
+                                               sim.caus <- rbinom(n=m, size=1, prob=pip)
                                                sim.chi2 <- ifelse(sum(sim.caus) > 0, prior_chisq / sum(sim.caus), 0)
                                                sim.V <- S %*% diag(prior_chisq * sim.caus) %*% S + S
                                                sim.Zs <- rmvn(n=1, mu=sim.mu, sigma=sim.V)
@@ -255,16 +238,16 @@ fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F
         inter.p <- NA
         BF <- dnorm(cur.Z, mean=0, sd=sqrt(prior_chisq + 1)) / dnorm(cur.Z, mean=0, sd=1) * prb
         marginal <-  (1 - prb) + BF
-        PIP <- BF / marginal
-        NULL.PIP <- (1 - prb) / marginal
+        pip <- BF / marginal
+        null.pip <- (1 - prb) / marginal
         log.marginal <- log(marginal)
         if (compute.grad) {
-            cur.grad <- PIP * (0.5 * (-1/(prior_chisq + 1)) + (cur.Z^2 / (prior_chisq + 1)^2)) + NULL.PIP * 0.5 * (-1 / (prior_chisq + 1)) 
-            cur.hess <- PIP * ((1 / (prior_chisq + 1)^2) - (cur.Z^2 / (prior_chisq + 1)^3)) + NULL.PIP * (1 / (prior_chisq + 1)^2)
+            cur.grad <- pip * (0.5 * (-1/(prior_chisq + 1)) + (cur.Z^2 / (prior_chisq + 1)^2)) + null.pip * 0.5 * (-1 / (prior_chisq + 1)) 
+            cur.hess <- pip * ((1 / (prior_chisq + 1)^2) - (cur.Z^2 / (prior_chisq + 1)^3)) + null.pip * (1 / (prior_chisq + 1)^2)
         } 
         Zp <- cur.Z
         if (posterior_check > 0) {
-            sim.caus <- rbinom(posterior_check, size=1, prob=PIP)
+            sim.caus <- rbinom(posterior_check, size=1, prob=pip)
             sim.Z <- rnorm(posterior_check, mean=0, sd=sqrt(prior_chisq * sim.caus + 1))
             simulation <- data.frame(ID=rep(cur.ID, posterior_check),
                                      CAUS=t(t(sim.caus)),
@@ -275,7 +258,7 @@ fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F
         }
     }
 
-    return (list(RESID.Z=Zp, INTER.Z=inter.z, INTER.P=inter.p, PIP=PIP, NULL.PIP=NULL.PIP,
+    return (list(RESID.Z=Zp, INTER.Z=inter.z, INTER.P=inter.p, PIP=pip, NULL.PIP=null.pip,
                  MARG.LOG.LIKE=log.marginal, GRAD=cur.grad, HESS=cur.hess, SIM=simulation))
 }
 
@@ -330,6 +313,8 @@ option_list = list(
               help="Probability for credible set computation. Annotates genes with in/not-in flag [default: %default]"),
   make_option("--posterior_check", action="store", default=0, type='integer',
               help="Number of posterior simulations for model checking [default: %default]"),
+  make_option("--tol", action="store", default=2.220446e-14, type='double',
+              help="Error tolerance to determine for non-zero singular values"),
   make_option("--chr", action="store", default=NA, type='character',
               help="Chromosome to analyze, currently only single chromosome analyses are performed [required]")
 )
@@ -342,6 +327,7 @@ max_iter <- 10
 chr = opt$chr
 prior_chisq <- opt$prior_chi2
 prb <- opt$prior_prob
+tol <- opt$tol
 
 # read all weights in list and compute union of SNPs to analyze
 LOG("Loading TWAS summary statistics")
@@ -412,7 +398,7 @@ if (opt$learn_prior_prob || opt$learn_prior_chi2) {
             cur.SW <- params$SW
             cur.keep <- params$FLAGS
 
-            res <- fine_map(cur.Z, cur.ID, cur.SW, cur.LD, prb, prior_chisq, intercept=opt$use_intercept, compute.grad=T)
+            res <- fine_map(cur.Z, cur.ID, cur.SW, cur.LD, prb, prior_chisq, intercept=opt$use_intercept, compute.grad=T, tol=opt$tol)
 
             cur.PIP <- res$PIP
             cur.MARG.LOG.LIKE <- res$MARG.LOG.LIKE
@@ -468,17 +454,12 @@ for ( i in ids ) {
         LOG(paste("Skipping region", i, "with", length(unique(cur.ID)), "genes"))
         next
     }
+    LOG(paste("Finemapping region", i, "with", length(unique(cur.ID)), "genes"))
 
     params <- get_local_params(cur.FILE, cur.ID, cur.MODEL, genos)
     cur.LD <- params$LD
     cur.SW <- params$SW
     cur.keep <- params$FLAGS
-    if (all(!cur.keep)) {
-        LOG(paste("Skipping region", i, "with", length(unique(cur.ID)), "genes"))
-        next
-    }
-
-    LOG(paste("Finemapping region", i, "with", length(unique(cur.ID)), "genes"))
 
     # ffs just make a data.frame already...
     cur.FILE <- cur.FILE[cur.keep]
@@ -498,7 +479,8 @@ for ( i in ids ) {
                     prior_chisq,
                     intercept=opt$use_intercept,
                     posterior_check=opt$posterior_check,
-                    verbose=T)
+                    verbose=T,
+                    tol=opt$tol)
     
     cur.INTERCEPT.Z <- res$INTER.Z
     cur.INTERCEPT.P <- res$INTER.P
