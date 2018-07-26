@@ -28,8 +28,12 @@ log_sum_exp <- function(a, b) {
 annotate_cred_set <- function(df, prb=0.90) {
     # the call to abs  function may seem weird, but there is numerical issues with 1 - cumsum for strange reason.
     # w/o it sometimes small negative numbers appear and throw off CS computation
-    return (df %>% group_by(BLOCK) %>% mutate(NPIP=PIP / sum(PIP)) %>% group_by(BLOCK) %>% arrange(BLOCK, NPIP) %>%
-            mutate(IN.CRED.SET=abs((1 - cumsum(NPIP))) <= prb) %>% select(-NPIP))
+    df %>% group_by(BLOCK) %>%
+            mutate(NPIP=PIP / sum(PIP)) %>%
+            arrange(BLOCK, NPIP) %>%
+            group_by(BLOCK) %>%
+            mutate(IN.CRED.SET=abs((1 - cumsum(NPIP))) <= prb) %>%
+            select(-NPIP)
 }
 
 get_independent <- function(CHR, ID, P0, P1, regions) {
@@ -115,7 +119,7 @@ get_local_params <- function(cur.FILE, cur.ID, cur.MODEL, genos) {
     return (list(SW=SW, LD=LD, FLAGS=flags))
 }
 
-fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F, compute.grad=F, posterior_check=0, tol=2.220446e-14, verbose=F) {
+fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F, posterior_check=0, tol=2.220446e-14, verbose=F) {
 
     # check length
     m <- length(cur.Z)
@@ -126,11 +130,6 @@ fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F
     }
     rownames(S) <- cur.ID
     colnames(S) <- cur.ID
-
-    if (!compute.grad) {
-        cur.grad <- NA
-        cur.hess <- NA
-    } 
 
     if (m > 1) {
         # this isn't the optimal solution, but _is_ unbiased.
@@ -155,11 +154,6 @@ fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F
         pip <- rep(0, m) 
         null.pip <- m * log(1 - prb)
         log.marginal <- null.pip # initialize with NULL prior-weighted BF
-
-        if (compute.grad) {
-            cur.grad <- 0
-            cur.hess <- 0
-        }
 
         k <- min(5, m) # this needs to be a parameter at some point
         pset <- unlist(sapply(1:k, function(x) combn(m, x, simplify=F)), recursive=F)
@@ -186,13 +180,6 @@ fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F
             # keep track for marginal likelihood
             log.marginal <- log_sum_exp(log.marginal, cur.log.BF)
 
-            if (compute.grad) {
-                cur.grad <- cur.grad + exp(cur.log.BF) * 0.5 * (-sum(cur.eig / (nc + prior_chisq * cur.eig)) + 
-                                                                sum(nc * cur.scaled.Zp / (nc + prior_chisq * cur.eig)^2))
-                cur.hess <- cur.hess + exp(cur.log.BF) * (sum(cur.eig^2 / (nc + prior_chisq * cur.eig)^2) -
-                                                          sum((nc * cur.eig * cur.scaled.Zp) / (nc + prior_chisq * cur.eig)^3))
-            } 
-
             # marginalize the posterior for marginal-posterior-inclusion probability (pip) on causals
             for (idx in idx_set) {
                 if (pip[idx] == 0) {
@@ -207,10 +194,6 @@ fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F
         pip <- exp(pip - log.marginal)
         null.pip <- exp(null.pip - log.marginal)
 
-        if (compute.grad) {
-            cur.grad <- cur.grad / exp(log.marginal)
-            cur.hess <- cur.hess / exp(log.marginal)
-        }
         if (posterior_check > 0) {
             res <- svd(S)
             eigs <- res$d
@@ -241,10 +224,6 @@ fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F
         pip <- BF / marginal
         null.pip <- (1 - prb) / marginal
         log.marginal <- log(marginal)
-        if (compute.grad) {
-            cur.grad <- pip * (0.5 * (-1/(prior_chisq + 1)) + (cur.Z^2 / (prior_chisq + 1)^2)) + null.pip * 0.5 * (-1 / (prior_chisq + 1)) 
-            cur.hess <- pip * ((1 / (prior_chisq + 1)^2) - (cur.Z^2 / (prior_chisq + 1)^3)) + null.pip * (1 / (prior_chisq + 1)^2)
-        } 
         Zp <- cur.Z
         if (posterior_check > 0) {
             sim.caus <- rbinom(posterior_check, size=1, prob=pip)
@@ -259,7 +238,7 @@ fine_map <- function(cur.Z, cur.ID, cur.W, cur.LD, prb, prior_chisq, intercept=F
     }
 
     return (list(RESID.Z=Zp, INTER.Z=inter.z, INTER.P=inter.p, PIP=pip, NULL.PIP=null.pip,
-                 MARG.LOG.LIKE=log.marginal, GRAD=cur.grad, HESS=cur.hess, SIM=simulation))
+                 MARG.LOG.LIKE=log.marginal, SIM=simulation))
 }
 
 allele.qc = function(a1,a2,ref1,ref2) {
@@ -292,7 +271,7 @@ option_list = list(
   make_option("--regions", action="store", default=NA, type='character',
               help="Path to gene blocks [required]"),
   make_option("--sig_regions", action="store", default=NA, type='character',
-              help="Path to gene blocks [required]"),
+              help="Path to regions containing genome-wide significant SNPs [required]"),
   make_option("--out", action="store", default=NA, type='character',
               help="Path to output files [required]"),
   make_option("--ref_ld_chr", action="store", default=NA, type='character',
@@ -303,8 +282,6 @@ option_list = list(
               help="Flag to include intercept for posterior calculation"),
   make_option("--prior_chi2", action="store", default=40, type='double',
               help="Prior chi-sq parameter for causal genes [default: %default]"),
-  make_option("--learn_prior_chi2", action="store_true", default=F, type='logical',
-              help="Flag to learn the prior chi-square parameter using Empirical Bayes"),
   make_option("--prior_prob", action="store", default=1e-3, type='double',
               help="Prior probability for a gene to be causal [default: %default]"),
   make_option("--learn_prior_prob", action="store_true", default=F, type='logical',
@@ -354,7 +331,7 @@ N = length(unique(wgtlist$ID))
 ord <- order(unlist(lapply(strsplit(uids, ":"), function(x) as.numeric(strsplit(x[2], "\\.\\.")[[1]][1]))))
 ids <- uids[ord]
 
-if (opt$learn_prior_prob || opt$learn_prior_chi2) {
+if (opt$learn_prior_prob) {
     iter <- 1
     like_diff <- 1
     log_like <- 0
@@ -370,8 +347,6 @@ if (opt$learn_prior_prob || opt$learn_prior_chi2) {
         log_like <- 0
         sum_prob <- 0
         m_gene <- 0
-        cur.GRAD <- 0
-        cur.HESS <- 0
 
         for ( i in ids ) {
 
@@ -398,12 +373,10 @@ if (opt$learn_prior_prob || opt$learn_prior_chi2) {
             cur.SW <- params$SW
             cur.keep <- params$FLAGS
 
-            res <- fine_map(cur.Z, cur.ID, cur.SW, cur.LD, prb, prior_chisq, intercept=opt$use_intercept, compute.grad=T, tol=opt$tol)
+            res <- fine_map(cur.Z, cur.ID, cur.SW, cur.LD, prb, prior_chisq, intercept=opt$use_intercept, tol=opt$tol)
 
             cur.PIP <- res$PIP
             cur.MARG.LOG.LIKE <- res$MARG.LOG.LIKE
-            cur.HESS <- cur.HESS + res$HESS
-            cur.GRAD <- cur.GRAD + res$GRAD
 
             m_gene <- m_gene + length(cur.PIP)
             sum_prob <- sum_prob + sum(cur.PIP)
@@ -412,12 +385,6 @@ if (opt$learn_prior_prob || opt$learn_prior_chi2) {
         if (opt$learn_prior_prob) {
             prb <- sum_prob / m_gene
             LOG(paste("Prior prob for iteration", iter, "=", prb))
-        }
-        if (opt$learn_prior_chi2) {
-            prior_chisq <- prior_chisq + cur.GRAD / cur.HESS # take Newton-ascent step => maximize log-like
-            LOG(paste("Prior causal-effect var GRAD for iteration", iter, "=", cur.GRAD))
-            LOG(paste("Prior causal-effect var HESS for iteration", iter, "=", cur.HESS))
-            LOG(paste("Prior causal-effect var estimate for iteration", iter, "=", prior_chisq))
         }
 
         like_diff <- abs(log_like - old_log_like)
