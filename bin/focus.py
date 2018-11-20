@@ -154,39 +154,6 @@ def parse_pos(pos, option):
     return position
 
 
-def parse_locations(locations, chrom=None, start_bp=None, stop_bp=None):
-    """
-    Parse user-specified BED file with [CHR, START, STOP] windows defining where to perform
-    imputation.
-
-    If user also specified chr, start-bp, or stop-bp arguments filter on those as well.
-    """
-    for idx, line in enumerate(locations):
-        # skip comments
-        if "#" in line:
-            continue
-
-        row = line.split()
-
-        if len(row) < 3:
-            raise ValueError("Line {} in locations file does not contain [CHR, START, STOP]".format(idx))
-
-        chrom_arg = row[0]
-        start_arg = parse_pos(row[1], "start argument in locations file")
-        stop_arg = parse_pos(row[2], "stop argument in locations file")
-
-        if chrom is not None and chrom_arg != chrom:
-            continue
-        elif start_bp is not None and start_arg < start_bp:
-            continue
-        elif stop_bp is not None and stop_arg > stop_bp:
-            continue
-
-        yield [chrom_arg, start_arg, stop_arg]
-
-    return
-
-
 def get_command_string(args):
     """
     Format pyfocus call and options into a string for logging/printing
@@ -196,7 +163,7 @@ def get_command_string(args):
     rest_strs = []
     for cmd in rest:
         if "--" in cmd:
-            if cmd in ["--quiet", "--verbose", "--force-non-negative"]:
+            if cmd in ["--quiet", "--verbose"]:
                 rest_strs.append("\t{}".format(cmd) + os.linesep)
             else:
                 rest_strs.append("\t{}".format(cmd))
@@ -780,16 +747,23 @@ def run_twas(args):
                 local_gwas = gwas.subset_by_pos(chrom, start, stop)
 
                 # only fine-map regions that contain GWAS signal
-                if min(local_gwas.Pvalues) >= args.p_threshold:
-                    log.warning("No GWAS SNPs found at {}:{} - {}:{}. Skipping".format(chrom, int(start), chrom, int(stop)))
+                if len(local_gwas) == 0:
+                    log.warning("No SNPs found at {}:{} - {}:{}. Skipping".format(chrom, int(start), chrom, int(stop)))
                     continue
 
-                # figure our what the regions are based on user input and LD blocks
-                wcollection.set_boundaries(partitions)
+                if not local_gwas.contains_hit(args.p_threshold):
+                    log.warning("No SNPs passing threshold {} found at {}:{} - {}:{}. Skipping".format(args.p_threshold,
+                                chrom, int(start), chrom, int(stop)))
+                    continue
+
+                # grab local weight data
+                local_weights = wcollection.subset_by_pos(chrom, start, stop)
 
                 # grab local reference genotype data
                 local_ref = ref.subset_by_pos(chrom, start, stop)
-                result = pyfocus.fine_map(local_gwas, region, local_ref)
+
+                # perform fine-mapping
+                result = pyfocus.fine_map(local_gwas, local_weights, local_ref)
 
                 # fine-map can break and return early if there are issues so check for non-none result
                 if result is not None:
@@ -903,6 +877,21 @@ def build_focus_parser(subp):
                       help="Path to reference panel PLINK data.")
     fmp.add_argument("weights",
                      help="Path to eQTL weights.")
+
+    # location options
+    fmp.add_argument("--chr", default=None,
+                      help="Perform imputation for specific chromosome.")
+    fmp.add_argument("--start", default=None,
+                      help="Perform imputation starting at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
+    fmp.add_argument("--stop", default=None,
+                      help="Perform imputation until at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
+    fmp.add_argument("--locations", default=None, type=argparse.FileType("r"),
+                     help="Path to a BED file containing windows (e.g., CHR START STOP) to impute.")
+
+    fmp.add_argument("--min-prop", default=0.9, type=float,
+                      help="Minimum required proportion of gwas/reference panel overlap to perform twas.")
+    fmp.add_argument("--p-threshold", default=5e-8, type=float,
+                     help="GWAS p-value threshold required for fine-mapping.")
 
     return fmp
 

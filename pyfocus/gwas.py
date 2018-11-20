@@ -60,6 +60,14 @@ class GWAS(pd.DataFrame):
 
         return GWAS(snps)
 
+    def contains_hit(self, pval=5e-8):
+        if GWAS.PCOL in self:
+            snps = any(self[GWAS.PCOL] <= pval)
+        else:
+            snps = any(stats.chi2.sf(self[GWAS.ZCOL] ** 2, 1) <= pval)
+
+        return snps
+
     @classmethod
     def parse_gwas(cls, stream):
         dtype_dict = {'SNP': str, 'Z': float, 'N': float, 'A1': str, 'A2': str}

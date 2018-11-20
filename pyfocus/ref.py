@@ -16,9 +16,9 @@ class IndBlocks(object):
     Class to wrap/iterate approximately independent regions
     """
 
-    CHRCOL = "chrom"
-    STARTCOL = "start"
-    STOPCOL = "stop"
+    CHRCOL = "CHR"
+    STARTCOL = "START"
+    STOPCOL = "STOP"
 
     REQ_COLS = [CHRCOL, STARTCOL, STOPCOL]
 

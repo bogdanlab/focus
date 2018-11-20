@@ -2,8 +2,12 @@
 
 # thinking of maybe going with some dask solutions here...
 class Weights(object):
-    pass
+
+    def __init__(self):
+        pass
 
 
 class WeightsCollection(object):
-    pass
+
+    def __init__(self):
+        pass
