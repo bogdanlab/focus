@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # This is a modified munge_sumstat.py from LDSC project
-# FIZI needed a similar tool but with a few extra output columns
+# FOCUS needed a similar tool but with a few extra output columns
 # Credit to Brendan Bulik-Sullivan and Hilary Finucane
 
 from __future__ import division
@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 from scipy.stats import chi2
+from sqlalchemy import and_
 
 np.seterr(invalid='ignore')
 
@@ -154,6 +155,39 @@ def parse_pos(pos, option):
     return position
 
 
+def parse_locations(locations, chrom=None, start_bp=None, stop_bp=None):
+    """
+    Parse user-specified BED file with [CHR, START, STOP] windows defining where to perform
+    imputation.
+
+    If user also specified chr, start-bp, or stop-bp arguments filter on those as well.
+    """
+    for idx, line in enumerate(locations):
+        # skip comments
+        if "#" in line:
+            continue
+
+        row = line.split()
+
+        if len(row) < 3:
+            raise ValueError("Line {} in locations file does not contain [CHR, START, STOP]".format(idx))
+
+        chrom_arg = row[0]
+        start_arg = parse_pos(row[1], "start argument in locations file")
+        stop_arg = parse_pos(row[2], "stop argument in locations file")
+
+        if chrom is not None and chrom_arg != chrom:
+            continue
+        elif start_bp is not None and start_arg < start_bp:
+            continue
+        elif stop_bp is not None and stop_arg > stop_bp:
+            continue
+
+        yield [chrom_arg, start_arg, stop_arg]
+
+    return
+
+
 def get_command_string(args):
     """
     Format pyfocus call and options into a string for logging/printing
@@ -163,7 +197,7 @@ def get_command_string(args):
     rest_strs = []
     for cmd in rest:
         if "--" in cmd:
-            if cmd in ["--quiet", "--verbose"]:
+            if cmd in ["--quiet", "--verbose", "--force-non-negative"]:
                 rest_strs.append("\t{}".format(cmd) + os.linesep)
             else:
                 rest_strs.append("\t{}".format(cmd))
@@ -727,10 +761,14 @@ def run_twas(args):
 
         # load reference genotype data
         log.info("Preparing reference SNP data")
-        ref = pyfocus.RefPanel.parse_plink(args.ref)
+        ref = pyfocus.LDRefPanel.parse_plink(args.ref)
 
-        log.info("Preparing eQTL weights")
-        wcollection = pyfocus.WeightsCollection(args.weights)
+        log.info("Preparing weight database")
+        session = pyfocus.load_db(args.weights)
+
+        # alias
+        Weight = pyfocus.Weight
+        Model = pyfocus.Model
 
         with open("{}.focus.txt".format(args.output), "w") as output:
             if args.locations is not None:
@@ -744,26 +782,28 @@ def run_twas(args):
             written = False
             for region in partitions:
                 chrom, start, stop = region
+
+                # grab local GWAS data
                 local_gwas = gwas.subset_by_pos(chrom, start, stop)
 
                 # only fine-map regions that contain GWAS signal
-                if len(local_gwas) == 0:
-                    log.warning("No SNPs found at {}:{} - {}:{}. Skipping".format(chrom, int(start), chrom, int(stop)))
+                if min(local_gwas.Pvalues) >= args.p_threshold:
+                    log.warning("No significant GWAS SNPs found at {}:{} - {}:{}. Skipping".format(chrom, int(start), chrom, int(stop)))
                     continue
-
-                if not local_gwas.contains_hit(args.p_threshold):
-                    log.warning("No SNPs passing threshold {} found at {}:{} - {}:{}. Skipping".format(args.p_threshold,
-                                chrom, int(start), chrom, int(stop)))
-                    continue
-
-                # grab local weight data
-                local_weights = wcollection.subset_by_pos(chrom, start, stop)
 
                 # grab local reference genotype data
                 local_ref = ref.subset_by_pos(chrom, start, stop)
 
-                # perform fine-mapping
-                result = pyfocus.fine_map(local_gwas, local_weights, local_ref)
+                # grab local SNP weights
+                snp_weights = session.query(Weight).\
+                    filter(and_(Weight.chrom == chrom, Weight.pos >= start, Weight.pos <= stop)).all()
+
+                # TODO: whittle weights down based on decision framework for gene prioritization
+                # TODO: e.g., tissue prioritized, then R2 etc
+                # snp_weights = ...
+
+                # fine-map, my dudes
+                result = pyfocus.fine_map(local_gwas, snp_weights, local_ref)
 
                 # fine-map can break and return early if there are issues so check for non-none result
                 if result is not None:
@@ -779,12 +819,30 @@ def run_twas(args):
 
 
 def build_weights(args):
-    pass
+    log = logging.getLogger(pyfocus.LOG)
+    try:
+        args = args
+
+        log.info("Preparing genotype data")
+
+        log.info("Preparing phenotype data")
+
+        log.info("Preparing covariate data")
+
+        log.info("Preparing weight database")
+        session = pyfocus.load_db(args.weights)
+
+    except Exception as err:
+        log.error(err.message)
+    finally:
+        log.info("Finished building prediction models")
+
+    return 0
 
 
 def build_munge_parser(subp):
     munp = subp.add_parser("munge",
-                           description="Munge summary statistics input to conform to FIZI requirements")
+                           description="Munge summary statistics input to conform to FOCUS requirements")
 
     munp.add_argument('sumstats', type=argparse.FileType("r"),
                       help="Input filename.")
@@ -860,7 +918,7 @@ def build_munge_parser(subp):
                       help="Do not print anything to stdout.")
     munp.add_argument("--verbose", default=False, action="store_true",
                       help="Verbose logging. Includes debug info.")
-    munp.add_argument("-o", "--output", default="FIZI",
+    munp.add_argument("-o", "--output", default="FOCUS",
                       help="Prefix for output data.")
 
     return munp
@@ -876,28 +934,29 @@ def build_focus_parser(subp):
     fmp.add_argument("ref",
                       help="Path to reference panel PLINK data.")
     fmp.add_argument("weights",
-                     help="Path to eQTL weights.")
-
-    # location options
-    fmp.add_argument("--chr", default=None,
-                      help="Perform imputation for specific chromosome.")
-    fmp.add_argument("--start", default=None,
-                      help="Perform imputation starting at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
-    fmp.add_argument("--stop", default=None,
-                      help="Perform imputation until at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
-    fmp.add_argument("--locations", default=None, type=argparse.FileType("r"),
-                     help="Path to a BED file containing windows (e.g., CHR START STOP) to impute.")
-
-    fmp.add_argument("--min-prop", default=0.9, type=float,
-                      help="Minimum required proportion of gwas/reference panel overlap to perform twas.")
-    fmp.add_argument("--p-threshold", default=5e-8, type=float,
-                     help="GWAS p-value threshold required for fine-mapping.")
+                     help="Path to weights database.")
 
     return fmp
 
 
 def build_weights_parser(subp):
+    # add weight-building parser
     wgtp = subp.add_parser("build", description="Compute weights for downstream TWAS and fine-mapping.")
+
+    # main arguments
+    wgtp.add_argument("weights",
+                     help="Path to weights database.")
+    wgtp.add_argument("genotype",
+                     help="Path to genotype data")
+    wgtp.add_argument("pheno",
+                      help="Path to phenotype data")
+
+    # optional arguments
+    wgtp.add_argument("--covar",
+                      help="Path to covariates data for individuals.")
+    wgtp.add_argument("--update", type=bool, action="store_true", defaul=False,
+                      help="Flag to indicate that existing weights for models should be updated in the database.")
+
     return wgtp
 
 
