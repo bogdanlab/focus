@@ -1,9 +1,9 @@
+from .db import *
 from .gwas import *
-from .inference import *
+from .finemap import *
 from .io import *
 from .ref import *
 from .util import *
-from .weights import *
 
 __version__ = "0.1b"
 
