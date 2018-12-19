@@ -12,36 +12,60 @@ HORSESHOE = "HORSESHOE"
 METHODS = [LASSO, GBLUP, HORSESHOE]
 
 
-def _fit_cis_herit(y, K_cis, X):
-    import limix
+def _lrt_pvalue(logl_H0, logl_H1, dof=1):
+    from scipy.stats import chi2
+    from numpy import asarray, clip, inf
+
+    epsilon = np.finfo(float).tiny
+
+    lrs = clip(-2 * logl_H0 + 2 * asarray(logl_H1), epsilon, inf)
+    pv = chi2(df=dof).sf(lrs)
+    return clip(pv, epsilon, 1 - epsilon)
+
+
+def _fit_cis_herit(y, K_cis, X, compute_lrt=False):
+    from glimix_core.lmm import LMM
+    from numpy_sugar.linalg import economic_qs_linear
+    from scipy.stats import norm
+    from scipy.linalg import lstsq
 
     log = logging.getLogger(pyfocus.LOG)
     log.info("Computing cis-heritability")
 
-    glmm = limix.glmm.GLMMComposer(len(y))
-    glmm.y = y
-    glmm.fixed_effects.append(X)
-    glmm.fixed_effects.append_offset()
-    glmm.covariance_matrices.append(K_cis)
-    glmm.covariance_matrices.append_iid_noise()
-    glmm.fit(verbose=False)
+    K_cis = economic_qs_linear(K_cis)
+    lmm = LMM(y, X, K_cis)
+    lmm.fit(verbose=False)
 
-    cis_scale = glmm.covariance_matrices[0].scale
-    noise_scale = glmm.covariance_matrices[1].scale
-    logl = glmm.lml()
+    fixed_betas = lmm.beta
+    logl_1 = lmm.lml()
 
-    return cis_scale, noise_scale, logl
+    cis_scale = lmm.v0
+    noise_scale = lmm.v1
+    fe_scale = lmm.fixed_effects_variance
+
+    if compute_lrt:
+        n, p = X.shape
+        # reduced model is just OLS regression for fixed-effects
+        fixed_betas_0, yresid, ranks, svals = lstsq(X, y)
+        s2e = np.mean(yresid ** 2)
+
+        logl_0 = np.sum(norm.logpdf(loc=np.dot(X, fixed_betas_0), scale=np.sqrt(s2e)))
+        pval = _lrt_pvalue(logl_0, logl_1)
+    else:
+        pval = None
+
+    return fe_scale, cis_scale, noise_scale, logl_1, fixed_betas, pval
 
 
 def _train_lasso(y, Z, X, include_ses=False):
-    from sklearn.linear_model import Lasso, LinearRegression
+    from sklearn.linear_model import Lasso
+    from scipy.linalg import lstsq
+
     log = logging.getLogger(pyfocus.LOG)
     log.debug("Initializing LASSO model")
 
     # we only want to penalize SNP effects and not covariate effects...
-    ols = LinearRegression()
-    ols.fit(X, y)
-    yresid = y - ols.predict(Z)
+    fixed_betas, yresid, ranks, svals = lstsq(X, y)
 
     # we need to estimate the h2g for tuning parameter
     lasso = Lasso()
@@ -52,11 +76,9 @@ def _train_lasso(y, Z, X, include_ses=False):
     return betas, attrs
 
 
-def _train_gblup(y, Z, X, include_ses=False):
+def _train_cvgblup(y, Z, X, include_ses=False):
     import limix
-    from sklearn.linear_model import LinearRegression
     from numpy.linalg import multi_dot as mdot
-    from scipy.linalg import cholesky
 
     log = logging.getLogger(pyfocus.LOG)
     log.debug("Initializing GBLUP model")
@@ -65,18 +87,15 @@ def _train_gblup(y, Z, X, include_ses=False):
 
     # estimate heritability using LIMIX
     K_cis = np.dot(Z, Z.T)
-    K_cis = limix.qc.normalise_covariance(K_cis) # do we need this?
-    s2u, s2e, logl = _fit_cis_herit(y, K_cis, X)
+    K_cis = limix.qc.normalise_covariance(K_cis)
+    fe_var, s2u, s2e, logl, fixed_betas, pval = _fit_cis_herit(y, K_cis, X, compute_lrt=True)
+
+    attrs["h2g"] = s2u / (fe_var + s2u + s2e)
+    attrs["h2g.pvalue"] = pval
+
+    # Total variance
     V = s2u * K_cis + s2e * np.ones(len(y))
     Vinv = np.linalg.inv(V)
-
-    # estimate BLUE estimates using estimated variance parameters
-    L = cholesky(Vinv, lower=True)
-    Xstar = np.dot(X, L)
-    ystar = np.dot(L, y)
-    ols = LinearRegression()
-    ols.fit(Xstar, ystar)
-    fixed_betas = ols.coef_
 
     # estimate BLUP for genomic prediction
     betas = mdot([Z * s2u, Vinv, (y - np.dot(X, fixed_betas))])
