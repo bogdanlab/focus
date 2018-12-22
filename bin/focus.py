@@ -54,7 +54,7 @@ default_cnames = {
     # P-VALUE
     'P': 'P',
     'PVALUE': 'P',
-    'P_VALUE':  'P',
+    'P_VALUE': 'P',
     'PVAL': 'P',
     'P_VAL': 'P',
     'GC_PVALUE': 'P',
@@ -281,7 +281,7 @@ def filter_info(info, log, args):
         ii = info >= args.info_min
     elif type(info) is pd.DataFrame:  # several INFO columns
         jj = (((info > 2.0) & info.notnull()).any(axis=1) | (
-            (info < 0) & info.notnull()).any(axis=1))
+                (info < 0) & info.notnull()).any(axis=1))
         ii = (info.sum(axis=1) >= args.info_min * (len(info.columns)))
     else:
         raise ValueError('Expected pd.DataFrame or pd.Series.')
@@ -327,7 +327,7 @@ def parse_dat(dat_gen, convert_colname, merge_alleles, log, args):
         log.info('Reading SNP chunk {}'.format(block_num + 1))
         tot_snps += len(dat)
         old = len(dat)
-        
+
         for c in dat.columns:
             # sometimes column types change when streaming the data
             if c in numeric_cols and not np.issubdtype(dat[c].dtype, np.number):
@@ -503,7 +503,7 @@ def allele_merge(dat, alleles, log):
     a1234 = dat.A1[ii] + dat.A2[ii] + dat.MA[ii]
     match = a1234.apply(lambda y: y in pyfocus.MATCH_ALLELES)
     jj = pd.Series(np.zeros(len(dat), dtype=bool))
-    jj[ii] = match        # This breaks the dtype sometimes
+    jj[ii] = match  # This breaks the dtype sometimes
     jj = jj.astype(bool)  # Enforce bool dtype
     old = ii.sum()
     n_mismatch = (~match).sum()
@@ -568,15 +568,15 @@ def munge(args):
                 dan_cas = clean_header(file_cnames[file_cnames.index('Nca')])
             except ValueError:
                 raise ValueError('Could not find Nca column expected for daner-n format')
-        
+
             try:
                 dan_con = clean_header(file_cnames[file_cnames.index('Nco')])
             except ValueError:
                 raise ValueError('Could not find Nco column expected for daner-n format')
-    
+
             cname_map[dan_cas] = 'N_CAS'
             cname_map[dan_con] = 'N_CON'
-    
+
             cname_translation = {x: cname_map[clean_header(x)] for x in file_cnames if
                                  clean_header(x) in cname_map}  # note keys not cleaned
             cname_description = {
@@ -590,19 +590,19 @@ def munge(args):
                 if len(sign_cnames) == 0:
                     raise ValueError(
                         'Could not find a signed summary statistic column.')
-    
+
                 sign_cname = sign_cnames[0]
                 signed_sumstat_null = null_values[cname_translation[sign_cname]]
                 cname_translation[sign_cname] = 'SIGNED_SUMSTAT'
             else:
                 sign_cname = 'SIGNED_SUMSTATS'
-    
+
             # check that we have all the columns we need
             if not args.a1_inc:
                 req_cols = ['SNP', 'P', 'SIGNED_SUMSTAT']
             else:
                 req_cols = ['SNP', 'P']
-    
+
             for c in req_cols:
                 if c not in cname_translation.values():
                     raise ValueError('Could not find {C} column.'.format(C=c))
@@ -612,17 +612,17 @@ def munge(args):
             numk = file_cnames.count(field)
             if numk > 1:
                 raise ValueError('Found {num} columns named {C}'.format(C=field, num=str(numk)))
-    
+
             # check multiple different column names don't map to same data field
             for head in cname_translation.values():
                 numc = cname_translation.values().count(head)
             if numc > 1:
-                    raise ValueError('Found {num} different {C} columns'.format(C=head, num=str(numc)))
-    
-            if (not args.N) and (not (args.N_cas and args.N_con)) and ('N' not in cname_translation.values()) and\
+                raise ValueError('Found {num} different {C} columns'.format(C=head, num=str(numc)))
+
+            if (not args.N) and (not (args.N_cas and args.N_con)) and ('N' not in cname_translation.values()) and \
                     (any(x not in cname_translation.values() for x in ['N_CAS', 'N_CON'])):
                 raise ValueError('Could not determine N.')
-            if ('N' in cname_translation.values() or all(x in cname_translation.values() for x in ['N_CAS', 'N_CON']))\
+            if ('N' in cname_translation.values() or all(x in cname_translation.values() for x in ['N_CAS', 'N_CON'])) \
                     and 'NSTUDY' in cname_translation.values():
                 nstudy = [
                     x for x in cname_translation if cname_translation[x] == 'NSTUDY']
@@ -630,11 +630,11 @@ def munge(args):
                     del cname_translation[x]
             if not args.no_alleles and not all(x in cname_translation.values() for x in ['A1', 'A2']):
                 raise ValueError('Could not find A1/A2 columns.')
-    
+
             log.info('Interpreting column names as follows:')
             for x in cname_description:
                 log.info(x + ': ' + cname_description[x])
-    
+
             if args.merge_alleles:
                 log.info(
                     'Reading list of SNPs for allele merge from {F}'.format(F=args.merge_alleles))
@@ -644,18 +644,18 @@ def munge(args):
                 if any(x not in merge_alleles.columns for x in ["SNP", "A1", "A2"]):
                     raise ValueError(
                         '--merge-alleles must have columns SNP, A1, A2.')
-    
+
                 log.info(
                     'Read {N} SNPs for allele merge.'.format(N=len(merge_alleles)))
                 merge_alleles['MA'] = (
-                    merge_alleles.A1 + merge_alleles.A2).apply(lambda y: y.upper())
+                        merge_alleles.A1 + merge_alleles.A2).apply(lambda y: y.upper())
                 merge_alleles.drop(
                     [x for x in merge_alleles.columns if x not in ['SNP', 'MA']], axis=1, inplace=True)
             else:
                 merge_alleles = None
-    
+
             (openfunc, compression) = get_compression(args.sumstats)
-    
+
             # figure out which columns are going to involve sign information, so we can ensure
             # they're read as floats
             signed_sumstat_cols = [k for k, v in cname_translation.items() if v == 'SIGNED_SUMSTAT']
@@ -663,11 +663,11 @@ def munge(args):
                                   compression=compression, usecols=cname_translation.keys(),
                                   na_values=['.', 'NA'], iterator=True, chunksize=args.chunksize,
                                   dtype={c: np.float64 for c in signed_sumstat_cols})
-    
+
             dat = parse_dat(dat_gen, cname_translation, merge_alleles, log, args)
             if len(dat) == 0:
                 raise ValueError('After applying filters, no SNPs remain.')
-    
+
             old = len(dat)
             dat = dat.drop_duplicates(subset='SNP').reset_index(drop=True)
             new = len(dat)
@@ -684,15 +684,15 @@ def munge(args):
                 else:
                     msg = 'Median value of {F} was {C}, which seems sensible.'.format(C=m, F=sign_cname)
                     log.info(msg)
-    
+
                 dat.Z *= (-1) ** (dat.SIGNED_SUMSTAT < signed_sumstat_null)
                 dat.drop('SIGNED_SUMSTAT', inplace=True, axis=1)
-    
+
             # do this last so we don't have to worry about NA values in the rest of
             # the program
             if args.merge_alleles:
                 dat = allele_merge(dat, merge_alleles, log)
-    
+
             out_fname = args.output + '.sumstats.gz'
             print_colnames = [
                 c for c in dat.columns if c in ['CHR', 'BP', 'SNP', 'N', 'Z', 'A1', 'A2']]
@@ -701,21 +701,22 @@ def munge(args):
             msg = 'Writing summary statistics for {M} SNPs ({N} with nonmissing beta) to {F}.'
             log.info(
                 msg.format(M=len(dat), F=out_fname, N=dat.N.notnull().sum()))
-    
+
             dat.to_csv(
                 out_fname, sep="\t", index=False, columns=print_colnames, float_format='%.3f', compression="gzip")
-    
+
             CHISQ = (dat.Z ** 2)
             mean_chisq = CHISQ.mean()
-    
+
             log.info('METADATA - Mean chi^2 = ' + str(round(mean_chisq, 3)))
             if mean_chisq < 1.02:
                 log.warning("METADATA: Mean chi^2 may be too small")
-    
+
             log.info('METADATA - Lambda GC = ' + str(round(CHISQ.median() / 0.4549, 3)))
             log.info('METADATA - Max chi^2 = ' + str(round(CHISQ.max(), 3)))
             log.info(
-                'METADATA - {N} Genome-wide significant SNPs (some may have been removed by filtering)'.format(N=(CHISQ > 29).sum()))
+                'METADATA - {N} Genome-wide significant SNPs (some may have been removed by filtering)'.format(
+                    N=(CHISQ > 29).sum()))
 
     except Exception as err:
         log.error(err.message)
@@ -788,14 +789,16 @@ def run_twas(args):
 
                 # only fine-map regions that contain GWAS signal
                 if min(local_gwas.Pvalues) >= args.p_threshold:
-                    log.warning("No significant GWAS SNPs found at {}:{} - {}:{}. Skipping".format(chrom, int(start), chrom, int(stop)))
+                    log.warning(
+                        "No significant GWAS SNPs found at {}:{} - {}:{}. Skipping".format(chrom, int(start), chrom,
+                                                                                           int(stop)))
                     continue
 
                 # grab local reference genotype data
                 local_ref = ref.subset_by_pos(chrom, start, stop)
 
                 # grab local SNP weights
-                snp_weights = session.query(Weight).\
+                snp_weights = session.query(Weight). \
                     filter(and_(Weight.chrom == chrom, Weight.pos >= start, Weight.pos <= stop)).all()
 
                 # TODO: whittle weights down based on decision framework for gene prioritization
@@ -823,18 +826,48 @@ def build_weights(args):
     try:
         args = args
 
+        # import pdb; pdb.set_trace()
         log.info("Preparing genotype data")
+        ref_panel = pyfocus.ExprRef.from_plink(args.genotype)
 
         log.info("Preparing phenotype data")
+        ref_panel.parse_pheno(args.pheno)
 
         log.info("Preparing covariate data")
+        ref_panel.parse_covar(args.covar)
+
+        log.info("Preparing expression meta-data")
+        ref_panel.parse_gene_info(args.info)
 
         log.info("Preparing weight database")
-        session = pyfocus.load_db(args.weights)
+        session = pyfocus.load_db(args.output)
+
+        db_ref_panel = pyfocus.RefPanel(
+            name=args.panel_name,
+            tissue=args.tissue,
+            assay=args.assay
+        )
+
+        for train_data in ref_panel:
+            # here is where we will iterate over genes, train models, and add to database
+            y, X, G, snp_info, gene_info = train_data
+
+            # fit predictive model using specified method
+            weights, ses, attrs = pyfocus.train_model(y, X, G, args.method, args.include_ses)
+
+            # build database object and commit
+            model = pyfocus.build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs)
+            session.add(model)
+            try:
+                session.commit()
+            except Exception as comm_err:
+                session.rollback()
+                raise
 
     except Exception as err:
         log.error(err.message)
     finally:
+        session.close()
         log.info("Finished building prediction models")
 
     return 0
@@ -930,9 +963,9 @@ def build_focus_parser(subp):
 
     # main arguments
     fmp.add_argument("gwas", type=argparse.FileType("r"),
-                      help="GWAS summary data. Supports gzip and bz2 compression.")
+                     help="GWAS summary data. Supports gzip and bz2 compression.")
     fmp.add_argument("ref",
-                      help="Path to reference panel PLINK data.")
+                     help="Path to reference panel PLINK data.")
     fmp.add_argument("weights",
                      help="Path to weights database.")
 
@@ -944,18 +977,38 @@ def build_weights_parser(subp):
     wgtp = subp.add_parser("build", description="Compute weights for downstream TWAS and fine-mapping.")
 
     # main arguments
-    wgtp.add_argument("weights",
-                     help="Path to weights database.")
     wgtp.add_argument("genotype",
-                     help="Path to genotype data")
+                      help="Path to genotype data")
     wgtp.add_argument("pheno",
                       help="Path to phenotype data")
+    wgtp.add_argument("info",
+                      help="Path to gene-info data")
 
-    # optional arguments
+    # inference options
     wgtp.add_argument("--covar",
                       help="Path to covariates data for individuals.")
-    wgtp.add_argument("--update", type=bool, action="store_true", defaul=False,
-                      help="Flag to indicate that existing weights for models should be updated in the database.")
+    wgtp.add_argument("--method", choices=pyfocus.METHODS, default="GBLUP",
+                      help="Method to perform model inference with.")
+    wgtp.add_argument("--include_ses", action="store_true", default=True,
+                      help="Include standard error estimates by bootstrap")
+
+    # technology / experiment options
+    wgtp.add_argument("--tissue",
+                      help="Tissue type assayed for expression")
+    wgtp.add_argument("--assay", choices=["", "rnaseq", "array"], default="",
+                      help="Technology used to measure expression levels (e.g., rnaseq)")
+
+    # db options
+    # wgtp.add_argument("--update", action="store_true", default=False,
+    #                  help="Flag to indicate that existing weights for models should be updated in the database.")
+
+    # misc options
+    wgtp.add_argument("-q", "--quiet", default=False, action="store_true",
+                      help="Do not print anything to stdout.")
+    wgtp.add_argument("--verbose", default=False, action="store_true",
+                      help="Verbose logging. Includes debug info.")
+    wgtp.add_argument("-o", "--output", default="FOCUS",
+                      help="Prefix for output data.")
 
     return wgtp
 
@@ -963,7 +1016,8 @@ def build_weights_parser(subp):
 def main(argsv):
     # setup main parser
     argp = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    subp = argp.add_subparsers(help="Subcommands: munge to clean up summary statistics. finemap to perform run twas & finemap.")
+    subp = argp.add_subparsers(
+        help="Subcommands: munge to clean up summary statistics. finemap to perform run twas & finemap.")
 
     # add subparser for the  munge summary statistics program
     munp = build_munge_parser(subp)
@@ -980,7 +1034,7 @@ def main(argsv):
 
     cmd_str = get_command_string(argsv)
 
-    masthead =  "===================================" + os.linesep
+    masthead = "===================================" + os.linesep
     masthead += "              FOCUS v{}            ".format(pyfocus.VERSION) + os.linesep
     masthead += "===================================" + os.linesep
 

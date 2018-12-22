@@ -1,29 +1,77 @@
 # am i optimizing prematurely? do we need this heavy machinary?
 
+
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, create_engine
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import relationship, sessionmaker
 
 Base = declarative_base()
 
 
 def load_db(path):
-    # TODO: check schema here and make sure everything is copacetic before continuing
+    # create engine, and ensure that tables exist
     engine = create_engine("sqlite:///{}".format(path))
+    Base.metadata.create_all(engine)
+
+    # create a session for all db operations
     session = sessionmaker(bind=engine)
 
     return session
 
 
-def append_model(model, session):
-    return
+def build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs, method):
+
+    mol_feature = MolecularFeature(
+        ens_gene_id=gene_info["gene_id"],
+        ens_tx_id=gene_info["tx_id"],
+        name=gene_info["name"],
+        chrom=gene_info["chrom"],
+        tx_start=gene_info["tx_start"],
+        tx_stop=gene_info["tx_stop"]
+    )
+
+    model = Model(
+        name="foo",
+        inference=method,
+        ref_panel=db_ref_panel,
+        mol_feature=mol_feature
+    )
+
+    # might be slow...
+    model.weights = [
+        Weight(
+            rsid=s_info.ID,
+            chrom=s_info.CHR,
+            pos=s_info.BP,
+            effect_allele=s_info.A1,
+            alt_allele=s_info.A0,
+            effect=w,
+            std_error=se
+        ) for w, se, s_info in zip(weights, ses, snp_info.iterrows())
+    ]
+
+    model.attrs = [
+        ModelAttribute(
+            name=name,
+            value=value
+        ) for name, value in attrs.iteritems()
+    ]
+
+    return model
 
 
-class RefPanel(Base):
-    __tablename__ = "refpanel"
+class FocusMixin(object):
 
-    # Main attribute
     id = Column(Integer, primary_key=True, autoincrement=True)
+
+    @declared_attr
+    def __tablename__(cls):
+        return cls.__name__.lower()
+
+
+class RefPanel(Base, FocusMixin):
+
+    # Main attributes
     name = Column(String(128), nullable=False)
     tissue = Column(String(128), nullable=False)
     assay = Column(String(128))
@@ -32,11 +80,9 @@ class RefPanel(Base):
     models = relationship("Model")
 
 
-class Model(Base):
-    __tablename__ = "model"
+class Model(Base, FocusMixin):
 
     # Main attribute
-    id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(128), nullable=False)
     inference = Column(String(128), nullable=False)
 
@@ -55,11 +101,9 @@ class Model(Base):
     attrs = relationship("ModelAttribute", back_populates="model")
 
 
-class ModelAttribute(Base):
-    __tablename__ = "modelattr"
+class ModelAttribute(Base, FocusMixin):
 
     # Main
-    id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(128), nullable=False)
     value = Column(Float)
 
@@ -68,10 +112,7 @@ class ModelAttribute(Base):
     model = relationship("Model", back_populates="model")
 
 
-class MolecularFeature(Base):
-    __tablename__ = "molecularfeature"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
+class MolecularFeature(Base, FocusMixin):
 
     ens_gene_id = Column(String(64), nullable=False)
     ens_tx_id = Column(String(64))
@@ -86,13 +127,10 @@ class MolecularFeature(Base):
     models = relationship("Model", back_populates="molecularfeature")
 
 
-class Weight(Base):
-    __tablename__ = "weight"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
+class Weight(Base, FocusMixin):
 
     rsid = Column(String(128), unique=True, nullable=False)
-    chrom = Column(String(10), nullable=False)
+    chrom = Column(String(2), nullable=False)
     pos = Column(Integer, nullable=False)
     effect_allele = Column(String(32), nullable=False)
     alt_allele = Column(String(32), nullable=False)

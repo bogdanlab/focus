@@ -4,7 +4,7 @@ import numpy as np
 import pyfocus
 
 
-__all__ = ["train_model"]
+__all__ = ["train_model", "METHODS"]
 
 LASSO = "LASSO"
 GBLUP = "GBLUP"
@@ -76,7 +76,7 @@ def _train_lasso(y, Z, X, include_ses=False):
     return betas, attrs
 
 
-def _train_cvgblup(y, Z, X, include_ses=False):
+def _train_gblup(y, Z, X, include_ses=False):
     import limix
     from numpy.linalg import multi_dot as mdot
 
@@ -113,16 +113,16 @@ def _train_horseshoe(y, Z, X, include_ses=False):
     return betas, attrs
 
 
-def train_model(y, Z, X, method="LASSO", include_ses=False):
+def train_model(y, X, G, method="GBLUP", include_ses=False):
     log = logging.getLogger(pyfocus.LOG)
     log.info("Initializing model inference")
 
     if method == LASSO:
-        betas, attrs = _train_lasso(y, Z, X, include_ses)
+        betas, attrs = _train_lasso(y, G, X, include_ses)
     elif method == GBLUP:
-        betas, attrs = _train_gblup(y, Z, X, include_ses)
+        betas, attrs = _train_gblup(y, G, X, include_ses)
     elif method == HORSESHOE:
-        betas, attrs = _train_gblup(y, Z, X, include_ses)
+        betas, attrs = _train_gblup(y, G, X, include_ses)
     else:
         raise ValueError("Unknown inference method {}".format(method))
 
