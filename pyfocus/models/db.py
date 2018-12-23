@@ -14,7 +14,9 @@ def load_db(path):
     Base.metadata.create_all(engine)
 
     # create a session for all db operations
-    session = sessionmaker(bind=engine)
+    Session = sessionmaker(bind=engine)
+
+    session = Session()
 
     return session
 
@@ -22,12 +24,12 @@ def load_db(path):
 def build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs, method):
 
     mol_feature = MolecularFeature(
-        ens_gene_id=gene_info["gene_id"],
-        ens_tx_id=gene_info["tx_id"],
-        name=gene_info["name"],
+        ens_gene_id=gene_info["geneid"],
+        ens_tx_id=gene_info["txid"],
+        name="tmp",  #gene_info["name"],
         chrom=gene_info["chrom"],
-        tx_start=gene_info["tx_start"],
-        tx_stop=gene_info["tx_stop"]
+        tx_start=gene_info["txstart"],
+        tx_stop=0  #gene_info["txstop"]
     )
 
     model = Model(
@@ -37,24 +39,27 @@ def build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs, method):
         mol_feature=mol_feature
     )
 
+    if ses is None:
+        ses = [None] * len(weights)
+
     # might be slow...
     model.weights = [
         Weight(
-            rsid=s_info.ID,
-            chrom=s_info.CHR,
-            pos=s_info.BP,
-            effect_allele=s_info.A1,
-            alt_allele=s_info.A0,
+            rsid=snp_info.iloc[idx].snp,
+            chrom=snp_info.iloc[idx].chrom,
+            pos=snp_info.iloc[idx].pos,
+            effect_allele=snp_info.iloc[idx].a1,
+            alt_allele=snp_info.iloc[idx].a0,
             effect=w,
-            std_error=se
-        ) for w, se, s_info in zip(weights, ses, snp_info.iterrows())
+            std_error=ses[idx]
+        ) for idx, w in enumerate(weights)
     ]
 
     model.attrs = [
         ModelAttribute(
             name=name,
             value=value
-        ) for name, value in attrs.iteritems()
+        ) for name, value in attrs.items()
     ]
 
     return model
@@ -77,7 +82,7 @@ class RefPanel(Base, FocusMixin):
     assay = Column(String(128))
 
     # Link to predictive models
-    models = relationship("Model")
+    models = relationship("Model", back_populates="ref_panel")
 
 
 class Model(Base, FocusMixin):
@@ -88,14 +93,14 @@ class Model(Base, FocusMixin):
 
     # Link back to RefPanel
     ref_id = Column(Integer, ForeignKey('refpanel.id'))
-    ref_panel = relationship("RefPanel", back_populates="model")
+    ref_panel = relationship("RefPanel", back_populates="models")
 
     # Link to weights for this model
     weights = relationship("Weight", back_populates="model")
 
     # Link to molecular attributes
     mol_id = Column(Integer, ForeignKey('molecularfeature.id'))
-    mol_feature = relationship("MolecularFeature", back_populates="model")
+    mol_feature = relationship("MolecularFeature", back_populates="models")
 
     # Link to general attributes
     attrs = relationship("ModelAttribute", back_populates="model")
@@ -109,7 +114,7 @@ class ModelAttribute(Base, FocusMixin):
 
     # Associate with model
     model_id = Column(Integer, ForeignKey("model.id"))
-    model = relationship("Model", back_populates="model")
+    model = relationship("Model", back_populates="attrs")
 
 
 class MolecularFeature(Base, FocusMixin):
@@ -124,12 +129,12 @@ class MolecularFeature(Base, FocusMixin):
     tx_start = Column(Integer, nullable=False)
     tx_stop = Column(Integer, nullable=False)
 
-    models = relationship("Model", back_populates="molecularfeature")
+    models = relationship("Model", back_populates="mol_feature")
 
 
 class Weight(Base, FocusMixin):
 
-    rsid = Column(String(128), unique=True, nullable=False)
+    rsid = Column(String(128), nullable=False)
     chrom = Column(String(2), nullable=False)
     pos = Column(Integer, nullable=False)
     effect_allele = Column(String(32), nullable=False)
@@ -139,4 +144,4 @@ class Weight(Base, FocusMixin):
     std_error = Column(Float)
 
     model_id = Column(Integer, ForeignKey("model.id"))
-    model = relationship("Model", back_populates="model")
+    model = relationship("Model", back_populates="weights")

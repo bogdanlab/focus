@@ -826,7 +826,7 @@ def build_weights(args):
     try:
         args = args
 
-        # import pdb; pdb.set_trace()
+        import pdb; pdb.set_trace()
         log.info("Preparing genotype data")
         ref_panel = pyfocus.ExprRef.from_plink(args.genotype)
 
@@ -859,7 +859,7 @@ def build_weights(args):
             model = pyfocus.build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs)
             session.add(model)
             try:
-                session.commit()
+                session.commit() # is this fast; can we async this?
             except Exception as comm_err:
                 session.rollback()
                 raise

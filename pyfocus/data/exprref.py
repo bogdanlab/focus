@@ -33,22 +33,30 @@ class ExprRef(object):
         X = self._prepare_covar()
 
         bound = 5e5
-        for row in self._gene_info.iterrows():
-            tx = row.TxID
-            chrom = pf.clean_chrom(row.Chrom)
-            txstart = row.TxStart
+        for idx, row in self._gene_info.iterrows():
+            tx = row.txid
+            chrom = row.chrom
+            txstart = row.txstart
 
-            snps = self._var_info.iloc[self._var_info.chr == chrom & np.abs(self._var_info.bp - txstart) <= bound]
+            # find overlapping SNPs
+            snps = self._var_info.loc[(self._var_info.chrom == chrom) & (np.abs(self._var_info.pos - txstart) <= bound)]
+
+            # pull genotype data
             G = self._geno[snps.i.values, :].compute().T
-            snp_info = self._var_info[snps.i.values,:]
 
             # impute missing with column mean
             col_mean = np.nanmean(G, axis=0)
             inds = np.where(np.isnan(G))
             G[inds] = np.take(col_mean, inds[1])
 
-            y = self._pheno[:, tx]
-            yield y, X, G, snp_info, row
+            # center and scale
+            G -= np.mean(G, axis=0)
+            G /= np.std(G, axis=0)
+
+            # inverse-normal transform the expression data
+            y = pf.inv_norm(self._pheno[tx].values)
+
+            yield y, X, G, snps, row
 
         return
 
@@ -63,19 +71,19 @@ class ExprRef(object):
     def _prepare_covar(self):
         # prepare the covariates data-frame into a matrix usable for regression
         # assumes that the data have already been aligned
-        mat = []
         sub_df = self._covar # we need to first remove FID/IID if they exist
-        num_df = sub_df.select_dtypes(include=np.number)
-        str_df = sub_df.select_dtypes(include=object)
-        # TODO: need to do one-hot-encoding of the string variables
+        sub_df = sub_df.loc[:, (sub_df.columns != "FID") & (sub_df.columns != "IID")]
 
-        final_mat = np.hstack((str_df, num_df))
-        return final_mat
+        # one-hot encoding of categorical variables
+        covar_mat = pd.get_dummies(sub_df, drop_first=True).values
+
+        return covar_mat
 
 
     def parse_gene_info(self, path):
         # TODO: validate meta-data. Must have columns we need for training
         self._gene_info = pd.read_table(path, delim_whitespace=True)
+        self._gene_info.chrom = self._gene_info.chrom.astype(str)
         return
 
     def align(self):
@@ -88,6 +96,7 @@ class ExprRef(object):
         with np.warnings.catch_warnings():
             np.warnings.filterwarnings('ignore', 'FutureWarning')
             bim, fam, bed = read_plink(path, verbose=False)
+            bim.chrom = bim.chrom.astype(str)
 
             return cls(bed, fam, bim)
 
