@@ -374,12 +374,11 @@ def parse_dat(dat_gen, convert_colname, merge_alleles, log, args):
         new = ii.sum()
         drops['P'] += old - new
         old = new
-        if not args.no_alleles:
-            dat.A1 = dat.A1.str.upper()
-            dat.A2 = dat.A2.str.upper()
-            ii &= filter_alleles(dat.A1 + dat.A2)
-            new = ii.sum()
-            drops['A'] += old - new
+        dat.A1 = dat.A1.str.upper()
+        dat.A2 = dat.A2.str.upper()
+        ii &= filter_alleles(dat.A1 + dat.A2)
+        new = ii.sum()
+        drops['A'] += old - new
 
         if ii.sum() == 0:
             continue
@@ -524,12 +523,6 @@ def munge(args):
     try:
         if args.sumstats is None:
             raise ValueError('The --sumstats flag is required')
-        if args.no_alleles and args.merge_alleles:
-            raise ValueError(
-                '--no-alleles and --merge-alleles are not compatible')
-        if args.daner and args.daner_n:
-            raise ValueError('--daner and --daner-n are not compatible. Use --daner for sample ' +
-                             'size from FRQ_A/FRQ_U headers, use --daner-n for values from Nca/Nco columns')
 
         file_cnames = read_header(args.sumstats)  # note keys not cleaned
         flag_cnames, signed_sumstat_null = parse_flag_cnames(args)
@@ -545,67 +538,37 @@ def munge(args):
             mod_default_cnames = default_cnames
 
         cname_map = get_cname_map(flag_cnames, mod_default_cnames, ignore_cnames)
-        if args.daner:
-            frq_u = filter(lambda x: x.startswith('FRQ_U_'), file_cnames)[0]
-            frq_a = filter(lambda x: x.startswith('FRQ_A_'), file_cnames)[0]
-            N_cas = float(frq_a[6:])
-            N_con = float(frq_u[6:])
-            log.info(
-                'Inferred that N_cas = {N1}, N_con = {N2} from the FRQ_[A/U] columns.'.format(N1=N_cas, N2=N_con))
-            args.N_cas = N_cas
-            args.N_con = N_con
-            # drop any N, N_cas, N_con or FRQ columns
-            for c in ['N', 'N_CAS', 'N_CON', 'FRQ']:  # c isn't used!?!?
-                for d in [x for x in cname_map if cname_map[x] == 'c']:
-                    del cname_map[d]
 
-            cname_map[frq_u] = 'FRQ'
+        cname_translation = {x: cname_map[clean_header(x)] for x in file_cnames if
+                             clean_header(x) in cname_map}  # note keys not cleaned
 
-        if args.daner_n:
-            frq_u = filter(lambda x: x.startswith('FRQ_U_'), file_cnames)[0]
-            cname_map[frq_u] = 'FRQ'
-            try:
-                dan_cas = clean_header(file_cnames[file_cnames.index('Nca')])
-            except ValueError:
-                raise ValueError('Could not find Nca column expected for daner-n format')
+        cname_description = { x: describe_cname[cname_translation[x]] for x in cname_translation}
 
-            try:
-                dan_con = clean_header(file_cnames[file_cnames.index('Nco')])
-            except ValueError:
-                raise ValueError('Could not find Nco column expected for daner-n format')
+        if args.signed_sumstats is None and not args.a1_inc:
+            sign_cnames = [
+                x for x in cname_translation if cname_translation[x] in null_values]
+            if len(sign_cnames) > 1:
+                raise ValueError(
+                    'Too many signed sumstat columns. Specify which to ignore with the --ignore flag.')
+            if len(sign_cnames) == 0:
+                raise ValueError(
+                    'Could not find a signed summary statistic column.')
 
-            cname_map[dan_cas] = 'N_CAS'
-            cname_map[dan_con] = 'N_CON'
+            sign_cname = sign_cnames[0]
+            signed_sumstat_null = null_values[cname_translation[sign_cname]]
+            cname_translation[sign_cname] = 'SIGNED_SUMSTAT'
+        else:
+            sign_cname = 'SIGNED_SUMSTATS'
 
-            cname_translation = {x: cname_map[clean_header(x)] for x in file_cnames if
-                                 clean_header(x) in cname_map}  # note keys not cleaned
-            cname_description = {
-                x: describe_cname[cname_translation[x]] for x in cname_translation}
-            if args.signed_sumstats is None and not args.a1_inc:
-                sign_cnames = [
-                    x for x in cname_translation if cname_translation[x] in null_values]
-                if len(sign_cnames) > 1:
-                    raise ValueError(
-                        'Too many signed sumstat columns. Specify which to ignore with the --ignore flag.')
-                if len(sign_cnames) == 0:
-                    raise ValueError(
-                        'Could not find a signed summary statistic column.')
+        # check that we have all the columns we need
+        if not args.a1_inc:
+            req_cols = ['SNP', 'P', 'SIGNED_SUMSTAT']
+        else:
+            req_cols = ['SNP', 'P']
 
-                sign_cname = sign_cnames[0]
-                signed_sumstat_null = null_values[cname_translation[sign_cname]]
-                cname_translation[sign_cname] = 'SIGNED_SUMSTAT'
-            else:
-                sign_cname = 'SIGNED_SUMSTATS'
-
-            # check that we have all the columns we need
-            if not args.a1_inc:
-                req_cols = ['SNP', 'P', 'SIGNED_SUMSTAT']
-            else:
-                req_cols = ['SNP', 'P']
-
-            for c in req_cols:
-                if c not in cname_translation.values():
-                    raise ValueError('Could not find {C} column.'.format(C=c))
+        for c in req_cols:
+            if c not in cname_translation.values():
+                raise ValueError('Could not find {C} column.'.format(C=c))
 
         # check aren't any duplicated column names in mapping
         for field in cname_translation:
@@ -628,7 +591,7 @@ def munge(args):
                     x for x in cname_translation if cname_translation[x] == 'NSTUDY']
                 for x in nstudy:
                     del cname_translation[x]
-            if not args.no_alleles and not all(x in cname_translation.values() for x in ['A1', 'A2']):
+            if not all(x in cname_translation.values() for x in ['A1', 'A2']):
                 raise ValueError('Could not find A1/A2 columns.')
 
             log.info('Interpreting column names as follows:')
@@ -826,7 +789,6 @@ def build_weights(args):
     try:
         args = args
 
-        import pdb; pdb.set_trace()
         log.info("Preparing genotype data")
         ref_panel = pyfocus.ExprRef.from_plink(args.genotype)
 
@@ -843,7 +805,7 @@ def build_weights(args):
         session = pyfocus.load_db(args.output)
 
         db_ref_panel = pyfocus.RefPanel(
-            name=args.panel_name,
+            name=args.name,
             tissue=args.tissue,
             assay=args.assay
         )
@@ -853,10 +815,11 @@ def build_weights(args):
             y, X, G, snp_info, gene_info = train_data
 
             # fit predictive model using specified method
+            log.info("Initializing {} model inference".format(gene_info["geneid"]))
             weights, ses, attrs = pyfocus.train_model(y, X, G, args.method, args.include_ses)
 
             # build database object and commit
-            model = pyfocus.build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs)
+            model = pyfocus.build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs, args.method)
             session.add(model)
             try:
                 session.commit() # is this fast; can we async this?
@@ -895,14 +858,6 @@ def build_munge_parser(subp):
                       help="Minimum INFO score.")
     munp.add_argument('--maf-min', default=0.01, type=float,
                       help="Minimum MAF.")
-    munp.add_argument('--daner', default=False, action='store_true',
-                      help="Use this flag to parse Stephan Ripke's daner* file format.")
-    munp.add_argument('--daner-n', default=False, action='store_true',
-                      help="Use this flag to parse more recent daner* formatted files, which "
-                           "include sample size column 'Nca' and 'Nco'.")
-    munp.add_argument('--no-alleles', default=False, action="store_true",
-                      help="Don't require alleles. Useful if only unsigned summary statistics are available "
-                           "and the goal is h2 / partitioned h2 estimation rather than rg estimation.")
     munp.add_argument('--merge-alleles', default=None, type=str,
                       help="Same as --merge, except the file should have three columns: SNP, A1, A2, "
                            "and all alleles will be matched to the --merge-alleles file alleles.")
@@ -993,8 +948,10 @@ def build_weights_parser(subp):
                       help="Include standard error estimates by bootstrap")
 
     # technology / experiment options
-    wgtp.add_argument("--tissue",
-                      help="Tissue type assayed for expression")
+    wgtp.add_argument("--name", default="",
+                      help="Name for expression reference panel (e.g., GTEx)")
+    wgtp.add_argument("--tissue", default="",
+                      help="Tissue type assayed for expression (e.g., liver)")
     wgtp.add_argument("--assay", choices=["", "rnaseq", "array"], default="",
                       help="Technology used to measure expression levels (e.g., rnaseq)")
 
