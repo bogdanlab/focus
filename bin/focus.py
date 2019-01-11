@@ -693,9 +693,10 @@ def run_twas(args):
     log = logging.getLogger(pyfocus.LOG)
     try:
         # perform sanity arguments checking before continuing
-        chrom = None
+        chrom = "1"
         start_bp = None
         stop_bp = None
+        """
         if any(x is not None for x in [args.chr, args.start, args.stop]):
             if args.start is not None and args.chr is None:
                 raise ValueError("Option --start cannot be set unless --chr is specified")
@@ -718,6 +719,7 @@ def run_twas(args):
             if args.start is not None and args.stop is not None:
                 if start_bp >= stop_bp:
                     raise ValueError("Specified --start position must be before --stop position")
+        """
 
         # load GWAS summary data
         log.info("Preparing GWAS summary file")
@@ -733,6 +735,7 @@ def run_twas(args):
         # alias
         Weight = pyfocus.Weight
         Model = pyfocus.Model
+        MolecularFeature = pyfocus.MolecularFeature
 
         with open("{}.focus.txt".format(args.output), "w") as output:
             if args.locations is not None:
@@ -751,7 +754,7 @@ def run_twas(args):
                 local_gwas = gwas.subset_by_pos(chrom, start, stop)
 
                 # only fine-map regions that contain GWAS signal
-                if min(local_gwas.Pvalues) >= args.p_threshold:
+                if min(local_gwas.P) >= args.p_threshold:
                     log.warning(
                         "No significant GWAS SNPs found at {}:{} - {}:{}. Skipping".format(chrom, int(start), chrom,
                                                                                            int(stop)))
@@ -761,8 +764,21 @@ def run_twas(args):
                 local_ref = ref.subset_by_pos(chrom, start, stop)
 
                 # grab local SNP weights
-                snp_weights = session.query(Weight). \
-                    filter(and_(Weight.chrom == chrom, Weight.pos >= start, Weight.pos <= stop)).all()
+                """
+                snp_weights = pd.read_sql(session.query(Weight, Model, MolecularFeature)
+                                          .filter(Weight.rsid.in_(local_gwas.SNP.values))
+                                          .statement, con=session.connection())
+                """
+                snp_weights = pd.read_sql(session.query(Weight, Model, MolecularFeature)
+                                          .filter(Weight.rsid.in_(local_gwas.SNP.values))
+                                          .join(Model)
+                                          .join(MolecularFeature)
+                                          .statement, con=session.connection())
+
+                # if there are no SNPs found in this region or none of the SNPs overlap the GWAS skip it
+                if len(snp_weights) == 0:
+                    log.warning("No overlapping weights at {}:{} - {}:{}. Skipping".format(chrom, int(start), chrom, int(stop)))
+                    continue
 
                 # TODO: whittle weights down based on decision framework for gene prioritization
                 # TODO: e.g., tissue prioritized, then R2 etc
@@ -777,7 +793,7 @@ def run_twas(args):
                     written = True
 
     except Exception as err:
-        log.error(err.message)
+        log.error(str(err))
     finally:
         log.info("Finished twas & fine-mapping")
 
@@ -802,7 +818,7 @@ def build_weights(args):
         ref_panel.parse_gene_info(args.info)
 
         log.info("Preparing weight database")
-        session = pyfocus.load_db(args.output)
+        session = pyfocus.load_db("{}.db".format(args.output))
 
         db_ref_panel = pyfocus.RefPanel(
             name=args.name,
@@ -810,25 +826,29 @@ def build_weights(args):
             assay=args.assay
         )
 
+        i = 0
         for train_data in ref_panel:
             # here is where we will iterate over genes, train models, and add to database
             y, X, G, snp_info, gene_info = train_data
 
             # fit predictive model using specified method
-            log.info("Initializing {} model inference".format(gene_info["geneid"]))
+            log.info("Performing {} model inference".format(gene_info["geneid"]))
             weights, ses, attrs = pyfocus.train_model(y, X, G, args.method, args.include_ses)
 
             # build database object and commit
             model = pyfocus.build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs, args.method)
             session.add(model)
             try:
-                session.commit() # is this fast; can we async this?
+                session.commit()
             except Exception as comm_err:
                 session.rollback()
                 raise
+            i += 1
+            if i == 50:
+                break
 
     except Exception as err:
-        log.error(err.message)
+        log.error(str(err))
     finally:
         session.close()
         log.info("Finished building prediction models")
@@ -917,12 +937,27 @@ def build_focus_parser(subp):
     fmp = subp.add_parser("finemap", description="Perform a TWAS and fine-map regional results.")
 
     # main arguments
-    fmp.add_argument("gwas", type=argparse.FileType("r"),
+    fmp.add_argument("gwas",
                      help="GWAS summary data. Supports gzip and bz2 compression.")
     fmp.add_argument("ref",
                      help="Path to reference panel PLINK data.")
     fmp.add_argument("weights",
                      help="Path to weights database.")
+
+    # fine-map options
+    fmp.add_argument("--locations", default=None, type=argparse.FileType("r"),
+                      help="Path to a BED file containing windows (e.g., CHR START STOP) to fine-map over." +
+                           "Start and stop values may contain kb/mb modifiers.")
+    fmp.add_argument("--p-threshold", default=5e-8, type=float,
+                     help="Minimum GWAS p-value required to perform TWAS fine-mapping.")
+
+    # misc options
+    fmp.add_argument("-q", "--quiet", default=False, action="store_true",
+                      help="Do not print anything to stdout.")
+    fmp.add_argument("--verbose", default=False, action="store_true",
+                      help="Verbose logging. Includes debug info.")
+    fmp.add_argument("-o", "--output", default="FOCUS",
+                      help="Prefix for output data.")
 
     return fmp
 
@@ -991,7 +1026,7 @@ def main(argsv):
 
     cmd_str = get_command_string(argsv)
 
-    masthead = "===================================" + os.linesep
+    masthead =  "===================================" + os.linesep
     masthead += "              FOCUS v{}            ".format(pyfocus.VERSION) + os.linesep
     masthead += "===================================" + os.linesep
 
@@ -999,7 +1034,10 @@ def main(argsv):
     log_format = "[%(asctime)s - %(levelname)s] %(message)s"
     date_format = "%Y-%m-%d %H:%M:%S"
     log = logging.getLogger(pyfocus.LOG)
-    log.setLevel(logging.INFO)
+    if args.verbose:
+        log.setLevel(logging.DEBUG)
+    else:
+        log.setLevel(logging.INFO)
     fmt = logging.Formatter(fmt=log_format, datefmt=date_format)
 
     # write to stdout unless quiet is set

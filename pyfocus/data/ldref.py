@@ -1,7 +1,7 @@
 import logging
 import warnings
 
-import pyfocus
+import pyfocus as pf
 import numpy as np
 import pandas as pd
 import pkg_resources
@@ -25,11 +25,11 @@ class IndBlocks(object):
     def __init__(self, regions=None):
         if regions is None:
             local_ld_blocks = pkg_resources.resource_filename(__name__, 'ld_blocks/grch37.eur.loci.bed')
-            self._regions = pd.read_csv(local_ld_blocks)
+            self._regions = pd.read_table(local_ld_blocks, delim_whitespace=True)
         else:
             # type checking in python == dumb
-            if type(regions) is str or type(regions) is file:
-                self._regions = pd.read_csv(regions)
+            if type(regions) is str or pf.is_file(regions):
+                self._regions = pd.read_table(regions, delim_whitespace=True)
             elif type(regions) is pd.core.frame.DataFrame:
                 self._regions = regions
 
@@ -46,7 +46,7 @@ class IndBlocks(object):
         if chrom is None:
             raise ValueError("chrom argument cannot be `None` in subset_by_pos")
 
-        chrom = pyfocus.clean_chrom(self._regions, chrom, IndBlocks.CHRCOL)
+        chrom = pf.clean_chrom(self._regions, chrom, IndBlocks.CHRCOL)
         df = self._regions.loc[self._regions[IndBlocks.CHRCOL] == chrom]
 
         if stop is None:
@@ -55,13 +55,14 @@ class IndBlocks(object):
             start = min(df[IndBlocks.STARTCOL])
 
         # grab the intervals that overap the provided start and stop positions on same chromosome
-        locs = df.loc[df.apply(lambda x: min(x[IndBlocks.STOPCOL], stop) - max(x[IndBlocks.STARTCOL], start)) > 0]
+        locs = df.loc[df.apply(lambda x: min(x[IndBlocks.STOPCOL], stop) - max(x[IndBlocks.STARTCOL], start), axis=1) > 0]
 
         return IndBlocks(locs)
 
     def __iter__(self):
         for row in self._regions.itertuples(name=None):
-            yield row
+            # drop the index
+            yield row[1:]
 
         return
 
@@ -99,7 +100,7 @@ class LDRefPanel(object):
         ambig = ["AT", "TA", "CG", "GC"]
         df = self._snp_info
 
-        chrom = pyfocus.clean_chrom(df, chrom, LDRefPanel.CHRCOL)
+        chrom = pf.clean_chrom(df, chrom, LDRefPanel.CHRCOL)
         if start is not None and stop is not None:
             snps = df.loc[(df[LDRefPanel.CHRCOL] == chrom) & (df[LDRefPanel.BPCOL] >= start) & (df[LDRefPanel.BPCOL] <= stop)]
         elif start is not None and stop is None:
@@ -118,7 +119,7 @@ class LDRefPanel(object):
 
     def overlap_gwas(self, gwas):
         df = self._snp_info
-        merged_snps = pd.merge(gwas, df, how="inner", left_on=pyfocus.GWAS.SNPCOL, right_on=pyfocus.LDRefPanel.SNPCOL)
+        merged_snps = pd.merge(gwas, df, how="inner", left_on=pf.GWAS.SNPCOL, right_on=pf.LDRefPanel.SNPCOL)
         return merged_snps
 
     def get_geno(self, snps=None):

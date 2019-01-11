@@ -50,10 +50,10 @@ def _fit_cis_herit(y, K_cis, X, compute_lrt=True):
 
         logl_0 = np.sum(norm.logpdf(y, loc=np.dot(X, fixed_betas_0), scale=np.sqrt(s2e)))
         pval = _lrt_pvalue(logl_0, logl_1)
-        log.info("Estimated cis-h2g = {} (P = {})".format(cis_scale / (cis_scale + noise_scale + fe_scale), pval))
+        log.debug("Estimated cis-h2g = {} (P = {})".format(cis_scale / (cis_scale + noise_scale + fe_scale), pval))
     else:
         pval = None
-        log.info("Estimated cis-h2g = {}".format(cis_scale / (cis_scale + noise_scale + fe_scale)))
+        log.debug("Estimated cis-h2g = {}".format(cis_scale / (cis_scale + noise_scale + fe_scale)))
 
     return fe_scale, cis_scale, noise_scale, logl_1, fixed_betas, pval
 
@@ -90,22 +90,40 @@ def _train_gblup(y, Z, X, include_ses=False):
     K_cis = np.dot(Z, Z.T)
     K_cis = limix.qc.normalise_covariance(K_cis)
     fe_var, s2u, s2e, logl, fixed_betas, pval = _fit_cis_herit(y, K_cis, X)
+    yresid = y - np.dot(X, fixed_betas)
 
     attrs["h2g"] = s2u / (fe_var + s2u + s2e)
     attrs["h2g.logl"] = logl
     attrs["h2g.pvalue"] = pval
 
     # Total variance
-    V = s2u * K_cis + s2e * np.ones(len(y))
-    Vinv = np.linalg.inv(V)
+    n, p = Z.shape
+    if n < p:
+        V = s2u * K_cis + s2e * np.ones(len(y))
+        Vinv = np.linalg.pinv(V)
 
-    # estimate BLUP for genomic prediction
-    betas = mdot([Z.T * s2u, Vinv, (y - np.dot(X, fixed_betas))])
+        # estimate BLUP for genomic prediction
+        betas = mdot([Z.T * s2u, Vinv, (y - np.dot(X, fixed_betas))])
+        if include_ses:
+            # I'm not sure how to pull out marker effects in fast leave-one-out using classic GBLUP, yet
+            ses = None
+        else:
+            ses = None
 
-    if include_ses:
-        pass
+    else:
+        # ridge solution (i.e. rrBLUP) should be faster when p < n
+        ZtZpDinv = np.linalg.pinv(np.dot(Z.T, Z) + np.eye(p) * (s2e / s2u))
+        betas = mdot([ZtZpDinv, Z.T, yresid])
+        if include_ses:
+            # jack-knife standard-errors over the fast leave-one-out estimates using rrBLUP
+            h = np.array([mdot([Z[i], ZtZpDinv, Z[i]]) for i in range(n)])
+            e = yresid - np.dot(Z, betas)
+            beta_jk = [betas - np.dot(ZtZpDinv, Z[i] * e[i] / (1 - h[i])) for i in range(n)]
+            ses = np.sqrt(np.mean(beta_jk, axis=0) * (n - 1))
+        else:
+            ses = None
 
-    return betas, None, attrs
+    return betas, ses, attrs
 
 
 def _train_horseshoe(y, Z, X, include_ses=False):

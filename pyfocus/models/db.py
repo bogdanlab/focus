@@ -14,9 +14,9 @@ def load_db(path):
     Base.metadata.create_all(engine)
 
     # create a session for all db operations
-    Session = sessionmaker(bind=engine)
+    factory = sessionmaker(bind=engine)
 
-    session = Session()
+    session = factory()
 
     return session
 
@@ -47,7 +47,7 @@ def build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs, method):
         Weight(
             rsid=snp_info.iloc[idx].snp,
             chrom=snp_info.iloc[idx].chrom,
-            pos=snp_info.iloc[idx].pos,
+            pos=int(snp_info.iloc[idx].pos),
             effect_allele=snp_info.iloc[idx].a1,
             alt_allele=snp_info.iloc[idx].a0,
             effect=w,
