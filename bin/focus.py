@@ -943,6 +943,8 @@ def build_focus_parser(subp):
                      help="Path to reference panel PLINK data.")
     fmp.add_argument("weights",
                      help="Path to weights database.")
+    fmp.add_argument("-p", "--plot", default=True, action='store_true',
+                    help="Plot fine-mapping visualizations")
 
     # fine-map options
     fmp.add_argument("--locations", default=None, type=argparse.FileType("r"),
