@@ -102,7 +102,7 @@ def estimate_cor(wmat, ldmat, intercept=False):
     :return: tuple (pred_expr correlation, intercept variable; None if intercept=False)
     """
     wcov = mdot([wmat.T, ldmat, wmat])
-    scale = np.diag(1 / np.sqrt(np.diag(wcov))
+    scale = np.diag(1 / np.sqrt(np.diag(wcov)))
     wcor = mdot([scale, wcov, scale])
 
     if intercept:
