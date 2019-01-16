@@ -8,6 +8,20 @@ from sqlalchemy.orm import relationship, sessionmaker
 Base = declarative_base()
 
 
+session = None
+
+
+def set_session(ssn):
+    global session
+    session = ssn
+    return
+
+
+def get_session():
+    global session
+    return session
+
+
 def load_db(path):
     # create engine, and ensure that tables exist
     engine = create_engine("sqlite:///{}".format(path))
@@ -16,9 +30,10 @@ def load_db(path):
     # create a session for all db operations
     factory = sessionmaker(bind=engine)
 
-    session = factory()
+    set_session(factory())
+    ssn = get_session()
 
-    return session
+    return ssn
 
 
 def build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs, method):

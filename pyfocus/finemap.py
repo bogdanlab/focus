@@ -12,8 +12,12 @@ from numpy.linalg import multi_dot as mdot
 __all__ = ["fine_map"]
 
 
-def create_output(foo):
-    return foo
+def create_output(meta_data, zscores, pips, null_res):
+
+    meta_data["Z"] = zscores
+    meta_data["PIP"] = pips
+
+    return meta_data
 
 
 def align_data(gwas, ref_geno, wcollection, ridge=0.1):
@@ -25,12 +29,16 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     :param wcollection: pandas.DataFrame object containing overlapping eQTL weights
     :param ridge: ridge adjustment for LD estimation (default = 0.1)
 
-    :return: tuple of aligned GWAS, eQTL weight-marix W, gene-names list, LD-matrix V
+    :return: tuple of aligned GWAS, eQTL weight-matrix W, gene-names list, LD-matrix V
     """
     log = logging.getLogger(pf.LOG)
 
     # align gwas with ref snps
     merged_snps = ref_geno.overlap_gwas(gwas)
+    if len(merged_snps) == 0:
+        log.info("No overlap between LD reference and GWAS")
+        return None
+
     ref_snps = merged_snps.loc[~pd.isna(merged_snps.i)]
 
     # flip Zscores to match reference panel
@@ -41,7 +49,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
                                             ref_snps[pf.LDRefPanel.A2COL])
 
     # collapse the gene models into a single weight matrix
-    genes = []
+    idxs = []
     final_df = None
     for eid, model in wcollection.groupby("ens_gene_id"):
         log.debug("Aligning weights for gene {}".format(eid))
@@ -61,8 +69,8 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
         if np.isclose(np.var(m_merged["effect"]), 0):
             continue
 
-        # keep track of name
-        genes.append(eid)
+        # keep model_id around to grab other attributes (pred-R2, etc) later on
+        idxs.append(model.index[0])
 
         # perform a union (outer merge) to build the aligned/flipped weight (possibly jagged) matrix
         if final_df is None:
@@ -71,7 +79,8 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
             final_df = pd.merge(final_df, m_merged[[pf.GWAS.SNPCOL, "effect"]], how="outer", on="SNP")
 
     # break out early
-    if len(genes) == 0:
+    if len(idxs) == 0:
+        log.info("No weights overlapped GWAS data")
         return None
 
     # final align back with GWAS + reference panel
@@ -88,7 +97,13 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     wmat = final_df.loc[:, final_df.columns != "SNP"].values
     wmat[np.isnan(wmat)] = 0.0
 
-    return ref_snps, wmat, genes, ldmat
+    # Meta-data on the current model
+    # what other things should we include in here?
+    meta_data = wcollection.loc[idxs,
+                                ["ens_gene_id", "ens_tx_id", "name", "tissue", "type", "chrom", "tx_start", "tx_stop", "inference", "model_id"]
+    ]
+
+    return ref_snps, wmat, meta_data, ldmat
 
 
 def estimate_cor(wmat, ldmat, intercept=False):
@@ -123,12 +138,12 @@ def assoc_test(weights, gwas, ldmat, heterogeneity=False):
 
     :return: tuple (beta, se)
     """
-    p = ldmat.shape[0]
 
+    p = ldmat.shape[0]
     assoc = np.dot(weights, gwas.Z)
     if heterogeneity:
         resid = assoc - gwas.Z
-        resid_var = mdot([resid, np.linalg.inv(ldmat), resid]) / p
+        resid_var = mdot([resid, lin.pinvh(ldmat), resid]) / p
     else:
         resid_var = 1
 
@@ -174,7 +189,6 @@ def bayes_factor(zscores, idx_set, wcor, prior_chisq, prb, use_log=True):
     Compute the Bayes Factor for the evidence that a set of genes explain the observed association signal under the
     correlation structure.
 
-
     :param zscores: numpy.ndarray TWAS zscores
     :param idx_set: list the indices representing the causal gene-set
     :param wcor: numpy.ndarray predicted expression correlation
@@ -205,7 +219,7 @@ def bayes_factor(zscores, idx_set, wcor, prior_chisq, prb, use_log=True):
 
     # log BF + log prior
     cur_bf = 0.5 * -np.sum(np.log(1 + cur_chi2 * cur_EIG)) + \
-        0.5 *  np.sum((cur_chi2 / (1 + cur_chi2 * cur_EIG)) * scaled_chisq) + \
+        0.5 * np.sum((cur_chi2 / (1 + cur_chi2 * cur_EIG)) * scaled_chisq) + \
         nc * np.log(prb) + (m - nc) * np.log(1 - prb)
 
     if use_log:
@@ -237,16 +251,16 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
     parameters = align_data(gwas, ref_geno, wcollection, ridge=ridge)
 
     if parameters is None:
-        # TODO: log and return empty result
-        pass
+        # break; logging of specific reason should be in align_data
+        return None
     else:
-        gwas, wmat, genes, ldmat = parameters
+        gwas, wmat, meta_data, ldmat = parameters
 
     zscores = []
     # run local TWAS
     # we need to check overlap somewhere in here
     for idx, weights in enumerate(wmat.T):
-        log.debug("Computing TWAS association statistic for gene {}".format(genes[idx]))
+        log.debug("Computing TWAS association statistic for gene {}".format(meta_data.iloc[idx]["ens_gene_id"]))
         beta, se = assoc_test(weights, gwas, ldmat, heterogeneity)
         zscores.append(beta / se)
 
@@ -267,6 +281,7 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
     else:
         inter_z = None
 
+    max_genes = 2
     k = m if max_genes is None else max_genes
     null_res = m * np.log(1 - prior_prob)
     marginal = null_res
@@ -288,8 +303,33 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
     pips = np.exp(pips - marginal)
     null_res = np.exp(null_res - marginal)
 
+    # Query the db to grab model attributes
+    # We might want to filter to only certain attributes at some point
+    session = pf.get_session()
+    attr = pd.read_sql(session.query(pf.ModelAttribute)
+                       .filter(pf.ModelAttribute.model_id.in_(meta_data.model_id.values.astype(object)))  # why doesn't inte64 work!?!
+                       .statement, con=session.connection())
+
+    # convert from long to wide format
+    attr = attr.pivot("model_id", "name", "value")
+
     # clean up and return results
-    df = create_output(None)
+    df = create_output(meta_data, zscores, pips, null_res)
+
+    # merge attributes
+    df = pd.merge(df, attr, left_on="model_id", right_index=True)
+    df["z"] = zscores
+    df["pip"] = pips
+    df["region"] = str(ref_geno).replace(" ", "")
+
+    # drop model-id
+    df = df.drop("model_id", axis=1)
+
+    # add null model result
+    df = df.append({"pip": null_res})
+
+    # sort by tx start site and we're good to go
+    df = df.sort_values(by="tx_start")
     log.info("Completed fine-mapping at region {}".format(ref_geno))
 
     return df

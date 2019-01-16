@@ -1,20 +1,22 @@
 import itertools as it
 import logging
 
-import pyfocus
-
 __all__ = ["flip_values", "clean_chrom", "inv_norm"]
 
 # Base-handling code is from LDSC...
 # complementary bases
 COMPLEMENT = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C'}
+
 # bases
 BASES = COMPLEMENT.keys()
+
+# dict that maps BASE => COMPLEMENT
 # true iff strand ambiguous
 STRAND_AMBIGUOUS = {''.join(x): x[0] == COMPLEMENT[x[1]]
                     for x in it.product(BASES, BASES)
                     if x[0] != x[1]}
 
+# set of non-ambiguous, non-matching 2-base strings
 # SNPS we want to keep (pairs of alleles)
 VALID_SNPS = {x for x in map(lambda y: ''.join(y), it.product(BASES, BASES))
               if x[0] != x[1] and not STRAND_AMBIGUOUS[x]}

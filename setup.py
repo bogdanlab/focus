@@ -13,7 +13,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/bogdanlab/focus",
     packages=["pyfocus"],
-    package_data={'pyfocus': ['ld_blocks/*.bed']},
+    package_data={'pyfocus': ['data/ld_blocks/*.bed']},
     install_requires=[
           "numpy",
           "scipy",
@@ -21,10 +21,10 @@ setuptools.setup(
           "pandas-plink",
       ],
     scripts=[
-        "bin/focus.py",
+        "bin/focus",
     ],
     classifiers=[
-        "Programming Language :: Python :: 2",
+        "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GPL License",
         "Operating System :: OS Independent",
     ],

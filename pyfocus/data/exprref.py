@@ -71,7 +71,7 @@ class ExprRef(object):
     def _prepare_covar(self):
         # prepare the covariates data-frame into a matrix usable for regression
         # assumes that the data have already been aligned
-        sub_df = self._covar # we need to first remove FID/IID if they exist
+        sub_df = self._covar  # we need to first remove FID/IID if they exist
         sub_df = sub_df.loc[:, (sub_df.columns != "FID") & (sub_df.columns != "IID")]
 
         # one-hot encoding of categorical variables
