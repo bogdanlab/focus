@@ -693,10 +693,9 @@ def run_twas(args):
     log = logging.getLogger(pyfocus.LOG)
     try:
         # perform sanity arguments checking before continuing
-        chrom = "1"
+        chrom = None
         start_bp = None
         stop_bp = None
-        """
         if any(x is not None for x in [args.chr, args.start, args.stop]):
             if args.start is not None and args.chr is None:
                 raise ValueError("Option --start cannot be set unless --chr is specified")
@@ -719,7 +718,6 @@ def run_twas(args):
             if args.start is not None and args.stop is not None:
                 if start_bp >= stop_bp:
                     raise ValueError("Specified --start position must be before --stop position")
-        """
 
         # load GWAS summary data
         log.info("Preparing GWAS summary file")
@@ -736,6 +734,7 @@ def run_twas(args):
         Weight = pyfocus.Weight
         Model = pyfocus.Model
         MolecularFeature = pyfocus.MolecularFeature
+        RefPanel = pyfocus.RefPanel
 
         with open("{}.focus.txt".format(args.output), "w") as output:
             if args.locations is not None:
@@ -758,21 +757,18 @@ def run_twas(args):
                     log.warning(
                         "No significant GWAS SNPs found at {}:{} - {}:{}. Skipping".format(chrom, int(start), chrom,
                                                                                            int(stop)))
-                    continue
+                    #continue
 
                 # grab local reference genotype data
                 local_ref = ref.subset_by_pos(chrom, start, stop)
 
+                # TODO: column names are duplicated here. need to fix...
                 # grab local SNP weights
-                """
-                snp_weights = pd.read_sql(session.query(Weight, Model, MolecularFeature)
-                                          .filter(Weight.rsid.in_(local_gwas.SNP.values))
-                                          .statement, con=session.connection())
-                """
-                snp_weights = pd.read_sql(session.query(Weight, Model, MolecularFeature)
+                snp_weights = pd.read_sql(session.query(Weight, Model, MolecularFeature, RefPanel)
                                           .filter(Weight.rsid.in_(local_gwas.SNP.values))
                                           .join(Model)
                                           .join(MolecularFeature)
+                                          .join(RefPanel)
                                           .statement, con=session.connection())
 
                 # if there are no SNPs found in this region or none of the SNPs overlap the GWAS skip it
@@ -943,8 +939,6 @@ def build_focus_parser(subp):
                      help="Path to reference panel PLINK data.")
     fmp.add_argument("weights",
                      help="Path to weights database.")
-    fmp.add_argument("-p", "--plot", default=True, action='store_true',
-                    help="Plot fine-mapping visualizations")
 
     # fine-map options
     fmp.add_argument("--locations", default=None, type=argparse.FileType("r"),
