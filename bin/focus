@@ -781,15 +781,21 @@ def run_twas(args):
                 # snp_weights = ...
 
                 # fine-map, my dudes
-                result = pyfocus.fine_map(local_gwas, snp_weights, local_ref)
+                result = pyfocus.fine_map(local_gwas, snp_weights, local_ref, ridge=args.ridge_term, plot=args.plot)
 
                 # fine-map can break and return early if there are issues so check for non-none result
                 if result is not None:
+                    if args.plot:
+                        result, plots = result
+                        for plot in plots:
+                            # TODO: save each plot here with some mechanism to know the name format
+                            pass
+
                     pyfocus.write_output(result, output, append=written)
                     written = True
 
     except Exception as err:
-        log.error(str(err))
+        log.error(err)
     finally:
         log.info("Finished twas & fine-mapping")
 
@@ -947,6 +953,12 @@ def build_focus_parser(subp):
     fmp.add_argument("--p-threshold", default=5e-8, type=float,
                      help="Minimum GWAS p-value required to perform TWAS fine-mapping.")
 
+    fmp.add_argument("--ridge-term", default=0.1, type=float,
+                      help="Diagonal adjustment for linkage-disequilibrium (LD) estimate.")
+
+    # plotting options
+    fmp.add_argument("-p", "--plot", action="store_true", default=False,
+                     help="Generate fine-mapping plots.")
     # misc options
     fmp.add_argument("-q", "--quiet", default=False, action="store_true",
                       help="Do not print anything to stdout.")
@@ -1021,6 +1033,12 @@ def main(argsv):
     args = argp.parse_args(argsv)
 
     cmd_str = get_command_string(argsv)
+
+    # hack to check that at least one sub-command was selected in 3.6
+    # 3.7 -might- have fixed this bug
+    if not hasattr(args, "func"):
+        argp.print_help()
+        return 2  # command-line error
 
     masthead =  "===================================" + os.linesep
     masthead += "              FOCUS v{}            ".format(pyfocus.VERSION) + os.linesep

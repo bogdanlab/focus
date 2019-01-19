@@ -228,7 +228,7 @@ def bayes_factor(zscores, idx_set, wcor, prior_chisq, prb, use_log=True):
         return np.exp(cur_bf)
 
 
-def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, max_genes=None, ridge=0.1, prior_prob=1e-3, prior_chisq=40):
+def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, max_genes=None, ridge=0.1, prior_prob=1e-3, prior_chisq=40, plot=False):
     """
     Perform a TWAS and fine-map the results.
 
@@ -241,8 +241,10 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
     :param ridge: float ridge adjustment for LD estimation (default = 0.1)
     :param prior_prob: float prior probability for a gene to be causal
     :param prior_chisq: float prior effect-size variance scaled by GWAS sample size
+    :param plot: bool whether or not to generate visualizations/plots at the risk region
 
-    :return: pandas.DataFrame containing the TWAS statistics and fine-mapping results
+    :return: pandas.DataFrame containing the TWAS statistics and fine-mapping results if plot=False.
+        (pandas.DataFrame, list of plot-objects) if plot=True
     """
     log = logging.getLogger(pf.LOG)
     log.info("Starting fine-mapping at region {}".format(ref_geno))
@@ -331,5 +333,7 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
     # sort by tx start site and we're good to go
     df = df.sort_values(by="tx_start")
     log.info("Completed fine-mapping at region {}".format(ref_geno))
-
-    return df
+    if plot:
+        return df, []
+    else:
+        return df
