@@ -42,7 +42,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     ref_snps = merged_snps.loc[~pd.isna(merged_snps.i)]
 
     # flip Zscores to match reference panel
-    ref_snps[pf.GWAS.ZCOL] = pf.flip_values(ref_snps[pf.GWAS.ZCOL].values,
+    ref_snps[pf.GWAS.ZCOL] = pf.flip_alleles(ref_snps[pf.GWAS.ZCOL].values,
                                             ref_snps[pf.GWAS.A1COL],
                                             ref_snps[pf.GWAS.A2COL],
                                             ref_snps[pf.LDRefPanel.A1COL],
@@ -59,11 +59,11 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
         m_merged = pd.merge(ref_snps, model, how="inner", left_on=pf.GWAS.SNPCOL, right_on="rsid")
 
         # make sure effects are for same ref allele as GWAS + reference panel
-        m_merged["effect"] = pf.flip_values(m_merged["effect"].values,
-                                            m_merged["effect_allele"],
-                                            m_merged["alt_allele"],
-                                            m_merged[pf.LDRefPanel.A1COL],
-                                            m_merged[pf.LDRefPanel.A2COL])
+        m_merged["effect"] = pf.flip_alleles(m_merged["effect"].values,
+                                             m_merged["effect_allele"],
+                                             m_merged["alt_allele"],
+                                             m_merged[pf.LDRefPanel.A1COL],
+                                             m_merged[pf.LDRefPanel.A2COL])
 
         # skip genes whose overlapping weights are all 0s
         if np.isclose(np.var(m_merged["effect"]), 0):
@@ -328,7 +328,7 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
     df = df.drop("model_id", axis=1)
 
     # add null model result
-    df = df.append({"pip": null_res})
+    df = df.append({"pip": null_res}, ignore_index=True)
 
     # sort by tx start site and we're good to go
     df = df.sort_values(by="tx_start")

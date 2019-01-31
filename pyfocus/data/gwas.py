@@ -46,9 +46,7 @@ class GWAS(pd.DataFrame):
     def _constructor_sliced(self):
         return pyfocus.GWASSeries
 
-    def subset_by_pos(self, chrom, start, stop):
-        chrom = pyfocus.clean_chrom(self, chrom, GWAS.CHRCOL)
-
+    def subset_by_pos(self, chrom, start=None, stop=None):
         if start is not None and stop is not None:
             snps = self.loc[(self[GWAS.CHRCOL] == chrom) & (self[GWAS.BPCOL] >= start) & (self[GWAS.BPCOL] <= stop)]
         elif start is not None and stop is None:
@@ -62,7 +60,7 @@ class GWAS(pd.DataFrame):
 
     @classmethod
     def parse_gwas(cls, stream):
-        dtype_dict = {'SNP': str, 'Z': float, 'N': float, 'A1': str, 'A2': str}
+        dtype_dict = {'CHR': "category", 'SNP': str, 'Z': float, 'N': float, 'A1': str, 'A2': str}
         try:
             df = pd.read_csv(stream, dtype=dtype_dict, delim_whitespace=True, compression='infer')
         except Exception as e:

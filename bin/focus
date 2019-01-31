@@ -12,13 +12,14 @@ import logging
 import os
 import re
 import sys
+import warnings
 
 import pyfocus
 import numpy as np
 import pandas as pd
 
 from scipy.stats import chi2
-from sqlalchemy import and_
+from sqlalchemy import exc as sa_exc
 
 np.seterr(invalid='ignore')
 
@@ -84,19 +85,30 @@ def parse_locations(locations, chrom=None, start_bp=None, stop_bp=None):
 
 def get_command_string(args):
     """
-    Format pyfocus call and options into a string for logging/printing
+    Format focus call and options into a string for logging/printing
+
+    :return: string containing formatted arguments to focus
     """
-    base = "focus.py " + " ".join(args[:2]) + os.linesep
-    rest = args[2:]
+
+    base = "focus {}{}".format(args[0], os.linesep)
+    rest = args[1:]
     rest_strs = []
+    needs_tab = True
     for cmd in rest:
-        if "--" in cmd:
-            if cmd in ["--quiet", "--verbose", "--force-non-negative"]:
-                rest_strs.append("\t{}".format(cmd) + os.linesep)
+        if "-" == cmd[0]:
+            if cmd in ["--quiet", "-q", "--verbose", "-v"]:
+                rest_strs.append("\t{}{}".format(cmd, os.linesep))
+                needs_tab = True
             else:
                 rest_strs.append("\t{}".format(cmd))
+                needs_tab = False
         else:
-            rest_strs.append(" " + cmd + os.linesep)
+            if needs_tab:
+                rest_strs.append("\t{}{}".format(cmd, os.linesep))
+                needs_tab = True
+            else:
+                rest_strs.append(" {}{}".format(cmd, os.linesep))
+                needs_tab = True
 
     return base + "".join(rest_strs) + os.linesep
 
@@ -217,7 +229,7 @@ def filter_alleles(a):
     return a.isin(pyfocus.VALID_SNPS)
 
 
-def parse_dat(dat_gen, convert_colname, merge_alleles, log, args):
+def parse_dat(dat_gen, convert_colname, log, args):
     """Parse and filter a sumstats file chunk-wise"""
 
     tot_snps = 0
@@ -243,15 +255,6 @@ def parse_dat(dat_gen, convert_colname, merge_alleles, log, args):
         dat.columns = map(lambda x: convert_colname[x], dat.columns)
 
         ii = np.ones(len(dat), dtype=bool)
-        if args.merge_alleles:
-            old = ii.sum()
-            ii = dat.SNP.isin(merge_alleles.SNP)
-            drops['MERGE'] += old - ii.sum()
-            if ii.sum() == 0:
-                continue
-
-            dat = dat[ii].reset_index(drop=True)
-            ii = np.ones(len(dat), dtype=bool)
 
         if 'INFO' in dat.columns:
             old = ii.sum()
@@ -291,9 +294,6 @@ def parse_dat(dat_gen, convert_colname, merge_alleles, log, args):
     log.info('Done reading SNP chunks')
     dat = pd.concat(dat_list, axis=0).reset_index(drop=True)
     log.info('Read {N} SNPs from --sumstats file'.format(N=tot_snps))
-    if args.merge_alleles:
-        log.info('Removed {N} SNPs not in --merge-alleles'.format(N=drops['MERGE']))
-
     log.info('Removed {N} SNPs with missing values'.format(N=drops['NA']))
     log.info('Removed {N} SNPs with INFO <= {I}'.format(N=drops['INFO'], I=args.info_min))
     log.info('Removed {N} SNPs with MAF <= {M}'.format(N=drops['FRQ'], M=args.maf_min))
@@ -580,25 +580,6 @@ def munge(args):
         for x in cname_description:
             log.info(x + ': ' + cname_description[x])
 
-        if args.merge_alleles:
-            log.info(
-                'Reading list of SNPs for allele merge from {F}'.format(F=args.merge_alleles))
-            (openfunc, compression) = get_compression(args.merge_alleles)
-            merge_alleles = pd.read_csv(args.merge_alleles, compression=compression, header=0,
-                                        delim_whitespace=True, na_values='.')
-            if any(x not in merge_alleles.columns for x in ["SNP", "A1", "A2"]):
-                raise ValueError(
-                    '--merge-alleles must have columns SNP, A1, A2.')
-
-            log.info(
-                'Read {N} SNPs for allele merge.'.format(N=len(merge_alleles)))
-            merge_alleles['MA'] = (
-                    merge_alleles.A1 + merge_alleles.A2).apply(lambda y: y.upper())
-            merge_alleles.drop(
-                [x for x in merge_alleles.columns if x not in ['SNP', 'MA']], axis=1, inplace=True)
-        else:
-            merge_alleles = None
-
         _, compression = get_compression(args.sumstats)
 
         # figure out which columns are going to involve sign information, so we can ensure
@@ -609,7 +590,7 @@ def munge(args):
                               na_values=['.', 'NA'], iterator=True, chunksize=args.chunksize,
                               dtype={c: np.float64 for c in signed_sumstat_cols})
 
-        dat = parse_dat(dat_gen, cname_translation, merge_alleles, log, args)
+        dat = parse_dat(dat_gen, cname_translation, log, args)
         if len(dat) == 0:
             raise ValueError('After applying filters, no SNPs remain.')
 
@@ -659,7 +640,7 @@ def munge(args):
                 N=(CHISQ > 29).sum()))
 
     except Exception as err:
-        log.error(err.message)
+        log.error(err)
     finally:
         log.info('Conversion finished')
 
@@ -700,9 +681,25 @@ def run_twas(args):
         log.info("Preparing GWAS summary file")
         gwas = pyfocus.GWAS.parse_gwas(args.gwas)
 
+        # if chrom is supplied just filter here
+        if chrom is not None:
+            gwas = gwas.subset_by_pos(chrom)
+            if len(gwas) == 0:
+                warn_str = "No GWAS SNPs found at chromosome {}"
+                warn_str = warn_str.format(chrom)
+                raise Exception(warn_str)
+
         # load reference genotype data
         log.info("Preparing reference SNP data")
         ref = pyfocus.LDRefPanel.parse_plink(args.ref)
+
+        # if chrom is supplied just filter here
+        if chrom is not None:
+            ref = ref.subset_by_pos(chrom)
+            if len(ref) == 0:
+                warn_str = "No reference LD SNPs found at chromosome {}"
+                warn_str = warn_str.format(chrom)
+                raise Exception(warn_str)
 
         log.info("Preparing weight database")
         session = pyfocus.load_db(args.weights)
@@ -720,37 +717,44 @@ def run_twas(args):
             else:
                 partitions = pyfocus.IndBlocks()
 
-            partitions = partitions.subset_by_pos(chrom, start_bp, stop_bp)
+            if chrom is not None:
+                partitions = partitions.subset_by_pos(chrom, start_bp, stop_bp)
 
             written = False
             for region in partitions:
                 chrom, start, stop = region
 
                 # grab local GWAS data
-                local_gwas = gwas.subset_by_pos(chrom, start, stop)
+                local_gwas = gwas.subset_by_pos(chrom, start=start, stop=stop)
 
                 # only fine-map regions that contain GWAS signal
                 if min(local_gwas.P) >= args.p_threshold:
-                    log.warning(
-                        "No significant GWAS SNPs found at {}:{} - {}:{}. Skipping".format(chrom, int(start), chrom,
-                                                                                           int(stop)))
+                    warn_str = "No significant GWAS SNPs found at {}:{} - {}:{}. Skipping"
+                    log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
                     #continue
 
                 # grab local reference genotype data
-                local_ref = ref.subset_by_pos(chrom, start, stop)
+                local_ref = ref.subset_by_pos(chrom, start=start, stop=stop)
+                if len(local_ref) == 0:
+                    warn_str = "No reference LD SNPs found at {}:{} - {}:{}. Skipping"
+                    log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
+                    continue
 
-                # TODO: column names are duplicated here. need to fix...
+                # TODO: column names are duplicated here. need to fix. just hide warning for now
                 # grab local SNP weights
-                snp_weights = pd.read_sql(session.query(Weight, Model, MolecularFeature, RefPanel)
-                                          .filter(Weight.rsid.in_(local_gwas.SNP.values))
-                                          .join(Model)
-                                          .join(MolecularFeature)
-                                          .join(RefPanel)
-                                          .statement, con=session.connection())
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=sa_exc.SAWarning)
+                    snp_weights = pd.read_sql(session.query(Weight, Model, MolecularFeature, RefPanel)
+                                              .filter(Weight.rsid.in_(local_gwas.SNP.values))
+                                              .join(Model)
+                                              .join(MolecularFeature)
+                                              .join(RefPanel)
+                                              .statement, con=session.connection())
 
                 # if there are no SNPs found in this region or none of the SNPs overlap the GWAS skip it
                 if len(snp_weights) == 0:
-                    log.warning("No overlapping weights at {}:{} - {}:{}. Skipping".format(chrom, int(start), chrom, int(stop)))
+                    warn_str = "No overlapping weights at {}:{} - {}:{}. Skipping"
+                    log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
                     continue
 
                 # TODO: whittle weights down based on decision framework for gene prioritization
@@ -838,8 +842,7 @@ def build_weights(args):
 def build_munge_parser(subp):
     munp = subp.add_parser("munge",
                            description="Munge summary statistics input to conform to FOCUS requirements")
-
-    munp.add_argument('sumstats', type=argparse.FileType("r"),
+    munp.add_argument('sumstats',
                       help="Input filename.")
     munp.add_argument('--N', default=None, type=float,
                       help="Sample size If this option is not set, will try to infer the sample "
@@ -857,9 +860,6 @@ def build_munge_parser(subp):
                       help="Minimum INFO score.")
     munp.add_argument('--maf-min', default=0.01, type=float,
                       help="Minimum MAF.")
-    munp.add_argument('--merge-alleles', default=None, type=str,
-                      help="Same as --merge, except the file should have three columns: SNP, A1, A2, "
-                           "and all alleles will be matched to the --merge-alleles file alleles.")
     munp.add_argument('--n-min', default=None, type=float,
                       help='Minimum N (sample size). Default is (90th percentile N) / 2.')
     munp.add_argument('--chunksize', default=5e6, type=int,
@@ -923,10 +923,18 @@ def build_focus_parser(subp):
     fmp.add_argument("weights",
                      help="Path to weights database.")
 
-    # fine-map options
+    # fine-map location options
+    fmp.add_argument("--chr", default=None,
+                      help="Perform imputation for specific chromosome.")
+    fmp.add_argument("--start", default=None,
+                      help="Perform imputation starting at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
+    fmp.add_argument("--stop", default=None,
+                      help="Perform imputation until at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
     fmp.add_argument("--locations", default=None, type=argparse.FileType("r"),
                       help="Path to a BED file containing windows (e.g., CHR START STOP) to fine-map over." +
                            "Start and stop values may contain kb/mb modifiers.")
+
+    # fine-map general options
     fmp.add_argument("--p-threshold", default=5e-8, type=float,
                      help="Minimum GWAS p-value required to perform TWAS fine-mapping.")
 

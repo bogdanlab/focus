@@ -1,4 +1,3 @@
-import logging
 import warnings
 
 import pyfocus as pf
@@ -24,12 +23,17 @@ class IndBlocks(object):
 
     def __init__(self, regions=None):
         if regions is None:
+            dtype_dict = {IndBlocks.CHRCOL: "category", IndBlocks.STARTCOL: int, IndBlocks.STOPCOL: int}
             local_ld_blocks = pkg_resources.resource_filename(__name__, 'ld_blocks/grch37.eur.loci.bed')
-            self._regions = pd.read_table(local_ld_blocks, delim_whitespace=True)
+            self._regions = pd.read_table(local_ld_blocks, delim_whitespace=True, dtype=dtype_dict)
         else:
             # type checking in python == dumb
             if type(regions) is str or pf.is_file(regions):
-                self._regions = pd.read_table(regions, delim_whitespace=True)
+                try:
+                    self._regions = pd.read_table(regions, delim_whitespace=True)
+                except Exception as e:
+                    raise Exception("Parsing LD blocks failed:" + str(e))
+
             elif type(regions) is pd.core.frame.DataFrame:
                 self._regions = regions
 
@@ -42,11 +46,9 @@ class IndBlocks(object):
         return
 
     def subset_by_pos(self, chrom, start, stop):
-
         if chrom is None:
             raise ValueError("chrom argument cannot be `None` in subset_by_pos")
 
-        chrom = pf.clean_chrom(self._regions, chrom, IndBlocks.CHRCOL)
         df = self._regions.loc[self._regions[IndBlocks.CHRCOL] == chrom]
 
         if stop is None:
@@ -78,7 +80,7 @@ class LDRefPanel(object):
 
     def __init__(self, snp_info, sample_info, geno):
         self._snp_info = snp_info
-        if pd.api.types.is_categorical_dtype(self._snp_info[LDRefPanel.A1COL]):
+        if len(snp_info) > 0 and pd.api.types.is_categorical_dtype(self._snp_info[LDRefPanel.A1COL]):
             self._snp_info.loc[:, LDRefPanel.A1COL] = self._snp_info[LDRefPanel.A1COL].astype('str')
             self._snp_info.loc[:, LDRefPanel.A2COL] = self._snp_info[LDRefPanel.A2COL].astype('str')
         self._sample_info = sample_info
@@ -96,11 +98,8 @@ class LDRefPanel(object):
         stop_bp = self._snp_info[LDRefPanel.BPCOL].iloc[-1]
         return "{}:{} - {}:{}".format(start_chr, int(start_bp), stop_chr, int(stop_bp))
 
-    def subset_by_pos(self, chrom, start=None, stop=None, filter_ambig=True):
-        ambig = ["AT", "TA", "CG", "GC"]
+    def subset_by_pos(self, chrom, start=None, stop=None, clean_snps=True):
         df = self._snp_info
-
-        chrom = pf.clean_chrom(df, chrom, LDRefPanel.CHRCOL)
         if start is not None and stop is not None:
             snps = df.loc[(df[LDRefPanel.CHRCOL] == chrom) & (df[LDRefPanel.BPCOL] >= start) & (df[LDRefPanel.BPCOL] <= stop)]
         elif start is not None and stop is None:
@@ -110,10 +109,9 @@ class LDRefPanel(object):
         else:
             snps = df.loc[(df[LDRefPanel.CHRCOL] == chrom)]
 
-        if filter_ambig:
-            alleles = snps[LDRefPanel.A1COL] + snps[LDRefPanel.A2COL]
-            non_ambig = alleles.apply(lambda y: y.upper() not in ambig)
-            snps = snps[non_ambig]
+        if clean_snps and len(snps) > 0:
+            valid = pf.check_valid_snp(snps[LDRefPanel.A1COL], snps[LDRefPanel.A2COL])
+            snps = snps.loc[valid].drop_duplicates(subset=pf.LDRefPanel.SNPCOL)
 
         return LDRefPanel(snps, self._sample_info, self._geno)
 
