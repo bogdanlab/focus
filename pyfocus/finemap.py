@@ -12,12 +12,40 @@ from numpy.linalg import multi_dot as mdot
 __all__ = ["fine_map"]
 
 
-def create_output(meta_data, zscores, pips, null_res):
+def create_output(meta_data, attr, zscores, pips, null_res, region):
 
-    meta_data["Z"] = zscores
-    meta_data["PIP"] = pips
+    # merge attributes
+    df = pd.merge(meta_data, attr, left_on="model_id", right_index=True)
+    df["z"] = zscores
+    df["pip"] = pips
+    df["region"] = region
 
-    return meta_data
+    # sort by tx start site and we're good to go
+    df = df.sort_values(by="tx_start")
+
+    # chrom is listed twice (once from weight and once from molfeature)
+    idxs = np.where(df.columns == "chrom")[0]
+    if len(idxs) > 1:
+        df = df.iloc[:, [j for j, c in enumerate(df.columns) if j != idxs[0]]]
+
+    # drop model-id
+    df = df.drop("model_id", axis=1)
+
+    # add null model result
+    null_dict = dict()
+    for c in df.columns:
+        null_dict[c] = None
+
+    null_dict["ens_gene_id"] = "NULL.MODEL"
+    null_dict["mol_name"] = "NULL"
+    null_dict["type"] = "NULL"
+    null_dict["pip"] = null_res
+    null_dict["region"] = region
+    null_dict["z"] = 0
+    null_dict["chrom"] = df["chrom"].values[0]
+    df = df.append(null_dict, ignore_index=True)
+
+    return df
 
 
 def align_data(gwas, ref_geno, wcollection, ridge=0.1):
@@ -56,7 +84,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
 
         # merge local model with the reference panel
         # effect_allele alt_allele effect
-        m_merged = pd.merge(ref_snps, model, how="inner", left_on=pf.GWAS.SNPCOL, right_on="rsid")
+        m_merged = pd.merge(ref_snps, model, how="inner", left_on=pf.GWAS.SNPCOL, right_on="snp")
 
         # make sure effects are for same ref allele as GWAS + reference panel
         m_merged["effect"] = pf.flip_alleles(m_merged["effect"].values,
@@ -100,7 +128,8 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     # Meta-data on the current model
     # what other things should we include in here?
     meta_data = wcollection.loc[idxs,
-                                ["ens_gene_id", "ens_tx_id", "name", "tissue", "type", "chrom", "tx_start", "tx_stop", "inference", "model_id"]
+                                ["ens_gene_id", "ens_tx_id", "mol_name", "tissue", "type", "chrom", "tx_start",
+                                "tx_stop", "inference", "model_id"]
     ]
 
     return ref_snps, wmat, meta_data, ldmat
@@ -313,25 +342,12 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
                        .statement, con=session.connection())
 
     # convert from long to wide format
-    attr = attr.pivot("model_id", "name", "value")
+    attr = attr.pivot("model_id", "attr_name", "value")
 
     # clean up and return results
-    df = create_output(meta_data, zscores, pips, null_res)
+    region = str(ref_geno).replace(" ", "")
+    df = create_output(meta_data, attr, zscores, pips, null_res, region)
 
-    # merge attributes
-    df = pd.merge(df, attr, left_on="model_id", right_index=True)
-    df["z"] = zscores
-    df["pip"] = pips
-    df["region"] = str(ref_geno).replace(" ", "")
-
-    # drop model-id
-    df = df.drop("model_id", axis=1)
-
-    # add null model result
-    df = df.append({"pip": null_res}, ignore_index=True)
-
-    # sort by tx start site and we're good to go
-    df = df.sort_values(by="tx_start")
     log.info("Completed fine-mapping at region {}".format(ref_geno))
     if plot:
         return df, []

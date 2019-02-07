@@ -12,5 +12,6 @@ def is_file(f):
 
 
 def write_output(results, output, append=False):
-    results.to_csv(output, sep="\t", mode="a" if append else "w", header=not append, index=False)
+    results.to_csv(output, sep="\t", mode="a" if append else "w", header=not append, index=False, na_rep="NA",
+                   float_format="%.3g")
     return

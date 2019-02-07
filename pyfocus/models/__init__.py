@@ -1,3 +1,3 @@
 from .db import *
-from .importwgt import *
+from .convert import *
 from .train import *

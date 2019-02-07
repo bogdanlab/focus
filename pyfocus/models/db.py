@@ -41,14 +41,14 @@ def build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs, method):
     mol_feature = MolecularFeature(
         ens_gene_id=gene_info["geneid"],
         ens_tx_id=gene_info["txid"],
-        name="tmp",  #gene_info["name"],
+        mol_name=gene_info["name"],
+        type=gene_info["type"],
         chrom=gene_info["chrom"],
         tx_start=gene_info["txstart"],
-        tx_stop=0  #gene_info["txstop"]
+        tx_stop=gene_info["txstop"]
     )
 
     model = Model(
-        name="foo",
         inference=method,
         ref_panel=db_ref_panel,
         mol_feature=mol_feature
@@ -60,7 +60,7 @@ def build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs, method):
     # might be slow...
     model.weights = [
         Weight(
-            rsid=snp_info.iloc[idx].snp,
+            snp=snp_info.iloc[idx].snp,
             chrom=snp_info.iloc[idx].chrom,
             pos=int(snp_info.iloc[idx].pos),
             effect_allele=snp_info.iloc[idx].a1,
@@ -72,7 +72,7 @@ def build_model(gene_info, snp_info, db_ref_panel, weights, ses, attrs, method):
 
     model.attrs = [
         ModelAttribute(
-            name=name,
+            attr_name=name,
             value=value
         ) for name, value in attrs.items()
     ]
@@ -92,7 +92,7 @@ class FocusMixin(object):
 class RefPanel(Base, FocusMixin):
 
     # Main attributes
-    name = Column(String(128), nullable=False)
+    ref_name = Column(String(128), nullable=False)
     tissue = Column(String(128), nullable=False)
     assay = Column(String(128))
 
@@ -103,7 +103,6 @@ class RefPanel(Base, FocusMixin):
 class Model(Base, FocusMixin):
 
     # Main attribute
-    name = Column(String(128), nullable=False)
     inference = Column(String(128), nullable=False)
 
     # Link back to RefPanel
@@ -124,7 +123,7 @@ class Model(Base, FocusMixin):
 class ModelAttribute(Base, FocusMixin):
 
     # Main
-    name = Column(String(128), nullable=False)
+    attr_name = Column(String(128), nullable=False)
     value = Column(Float)
 
     # Associate with model
@@ -137,19 +136,19 @@ class MolecularFeature(Base, FocusMixin):
     ens_gene_id = Column(String(64), nullable=False)
     ens_tx_id = Column(String(64))
 
-    name = Column(String(64))
+    mol_name = Column(String(64))
     type = Column(String(64))
 
     chrom = Column(String(10), nullable=False)
-    tx_start = Column(Integer, nullable=False)
-    tx_stop = Column(Integer, nullable=False)
+    tx_start = Column(Integer)
+    tx_stop = Column(Integer)
 
     models = relationship("Model", back_populates="mol_feature")
 
 
 class Weight(Base, FocusMixin):
 
-    rsid = Column(String(128), nullable=False)
+    snp = Column(String(128), nullable=False)
     chrom = Column(String(2), nullable=False)
     pos = Column(Integer, nullable=False)
     effect_allele = Column(String(32), nullable=False)
