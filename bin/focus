@@ -27,6 +27,39 @@ np.seterr(invalid='ignore')
 numeric_cols = ['P', 'N', 'N_CAS', 'N_CON', 'Z', 'OR', 'BETA', 'LOG_ODDS', 'INFO', 'FRQ', 'SIGNED_SUMSTAT', 'NSTUDY']
 
 
+def parse_pint(str):
+    try:
+        value = int(str)
+        if value <= 0:
+            raise ValueError()
+    except ValueError as ve:
+        raise argparse.ArgumentTypeError("Value needs to be positive interger")
+
+    return value
+
+
+def parse_prob(str):
+    try:
+        value = float(str)
+        if value < 0 or value > 1:
+            raise ValueError()
+    except ValueError as ve:
+        raise argparse.ArgumentTypeError('Value has to be between 0 and 1')
+
+    return value
+
+
+def parse_chisq(str):
+    try:
+        value = float(str)
+        if value < 0:
+            raise ValueError()
+    except ValueError as ve:
+        raise argparse.ArgumentTypeError('Value has to be at least 0')
+
+    return value
+
+
 def parse_pos(pos, option):
     """
     Parse a specified genomic position.
@@ -680,9 +713,9 @@ def run_twas(args):
         if chrom is not None:
             gwas = gwas.subset_by_pos(chrom)
             if len(gwas) == 0:
-                warn_str = "No GWAS SNPs found at chromosome {}"
-                warn_str = warn_str.format(chrom)
-                raise Exception(warn_str)
+                err_str = "No GWAS SNPs found at chromosome {}"
+                err_str = err_str.format(chrom)
+                raise Exception(err_str)
 
         # load reference genotype data
         log.info("Preparing reference SNP data")
@@ -692,9 +725,9 @@ def run_twas(args):
         if chrom is not None:
             ref = ref.subset_by_pos(chrom)
             if len(ref) == 0:
-                warn_str = "No reference LD SNPs found at chromosome {}"
-                warn_str = warn_str.format(chrom)
-                raise Exception(warn_str)
+                err_str = "No reference LD SNPs found at chromosome {}"
+                err_str = err_str.format(chrom)
+                raise Exception(err_str)
 
         log.info("Preparing weight database")
         # not the best approach, but load_db creates an empty db if the file does not exist
@@ -729,8 +762,8 @@ def run_twas(args):
 
                 # only fine-map regions that contain GWAS signal
                 if min(local_gwas.P) >= args.p_threshold:
-                    warn_str = "No significant GWAS SNPs found at {}:{} - {}:{}. Skipping"
-                    log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
+                    warn_str = "No GWAS SNPs with p-value < {:.2g} found at {}:{} - {}:{}. Skipping"
+                    log.warning(warn_str.format(args.p_threshold, chrom, int(start), chrom, int(stop)))
                     continue
 
                 # grab local reference genotype data
@@ -757,14 +790,17 @@ def run_twas(args):
                     continue
 
                 if args.tissue is not None:
-                    log.info("Prioritzing genes by {} tissue then on predictive performance at region {}".format(args.tissue, local_ref))
-                    snp_weights = get_tissue_prioritized_genes(snp_weights, args.tissue, session, metric="cv.R2", strict=args.strict_tissue)
+                    info_str = "Prioritzing genes by {} tissue then on predictive performance at region {}"
+                    log.info(info_str.format(args.tissue, local_ref))
+                    snp_weights = get_tissue_prioritized_genes(snp_weights, args.tissue, session,
+                                                               metric="cv.R2", strict=args.strict_tissue)
 
                 # fine-map, my dudes
-                #import pdb; pdb.set_trace()
-                result = pyfocus.fine_map(local_gwas, snp_weights, local_ref, ridge=args.ridge_term, plot=args.plot)
+                result = pyfocus.fine_map(local_gwas, snp_weights, local_ref, intercept=args.intercept,
+                                          max_genes=args.max_genes, ridge=args.ridge_term, prior_prob=args.prior_prob,
+                                          prior_chisq=args.prior_chisq, plot=args.plot)
 
-                # fine-map can break and return early if there are issues so check for non-none result
+                # fine-map can break and return early if there are issues so check for non-None result
                 if result is not None:
                     if args.plot:
                         result, plots = result
@@ -790,55 +826,61 @@ def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", s
     score = dict()
     tissue_type = dict()
 
+    mids = snp_weights.model_id.unique().astype(object)
+
+    # if there are multiple models for a gene we need to select the prioritized tissue first
+    # and if it isn't represented select the model with best metric (e.g., cv.R2, h2g, etc.)
+    attrs = pd.read_sql(session.query(pyfocus.ModelAttribute)
+                       .filter(pyfocus.ModelAttribute.model_id.in_(mids))
+                       .statement, con=session.connection())
+
     # "ens_tx_id" is likely to be None which breaks this
     # just use gene-id for now until Tx models become fully incorporated
-    for eids, models in snp_weights.groupby(["ens_gene_id"]):
-        for data, model in models.groupby(["tissue", "inference", "ref_name"]):
-            # if there are multiple models for a gene we need to select the prioritized tissue first
-            # and if it isn't represented select the model with best metric (e.g., cv.R2, h2g, etc.)
-            attr = pd.read_sql(session.query(pyfocus.ModelAttribute)
-                               .filter(pyfocus.ModelAttribute.model_id.in_(model.model_id.values.astype(object)))
-                               .statement, con=session.connection())
+    for data, model in snp_weights.groupby(["ens_gene_id", "tissue", "inference", "ref_name"]):
+        eid, mtissue, inference, ref_name = data
 
-            if metric not in attr.attr_name.values:
-                log.warning("Gene {} does not have {} and cannot evaluate performance. Skipping.".format(metric, eids))
-                continue
+        local_mid = model.model_id.unique()[0]
+        attr = attrs[attrs.model_id == local_mid]
 
-            metric_value = attr[attr.attr_name == metric]["value"].values[0]
-            if eids not in keep:
-                keep[eids] = model
-                score[eids] = metric_value
-                tissue_type[eids] = data[0]
-                continue
+        if metric not in attr.attr_name.values:
+            log.warning("Gene {} does not have {} and cannot evaluate performance. Skipping.".format(eid, metric))
+            continue
 
-            if re.match(".*" + tissue + ".*", data[0], flags=re.IGNORECASE) or \
-                    (strict and tissue == data[0]):
-                # we have a match on tissue
-                if re.match(".*" + tissue + ".*", tissue_type[eids], flags=re.IGNORECASE) or \
-                        (strict and tissue == tissue_type[eids]):
-                    if metric_value > score[eids]:
-                        # model is from the same tissue and has a better predictive value
-                        keep[eids] = model
-                        score[eids] = metric_value
-                        tissue_type[eids] = data[0]
-                else:
-                    # model is from the preferred tissue and should replace w/e was previously stored
-                    keep[eids] = model
-                    score[eids] = metric_value
-                    tissue_type[eids] = data[0]
+        metric_value = attr[attr.attr_name == metric]["value"].values[0]
+        if eid not in keep:
+            keep[eid] = model
+            score[eid] = metric_value
+            tissue_type[eid] = mtissue
+            continue
+
+        if re.match(".*" + tissue + ".*", mtissue, flags=re.IGNORECASE) or \
+                (strict and tissue == mtissue):
+            # we have a match on tissue
+            if re.match(".*" + tissue + ".*", tissue_type[eid], flags=re.IGNORECASE) or \
+                    (strict and tissue == tissue_type[eid]):
+                if metric_value > score[eid]:
+                    # model is from the same tissue and has a better predictive value
+                    keep[eid] = model
+                    score[eid] = metric_value
+                    tissue_type[eid] = mtissue
             else:
-                # current model is non preferred
-                if re.match(".*" + tissue + ".*", tissue_type[eids], flags=re.IGNORECASE) or \
-                        (strict and tissue == tissue_type[eids]):
-                    # previous model was from preferred tissue; skip
-                    continue
+                # model is from the preferred tissue and should replace w/e was previously stored
+                keep[eid] = model
+                score[eid] = metric_value
+                tissue_type[eid] = mtissue
+        else:
+            # current model is non preferred
+            if re.match(".*" + tissue + ".*", tissue_type[eid], flags=re.IGNORECASE) or \
+                    (strict and tissue == tissue_type[eid]):
+                # previous model was from preferred tissue; skip
+                continue
 
-                if metric_value > score[eids]:
-                    # model is not from preferred tissue, but is better than the previously stored
-                    # non-preferred tissue model
-                    keep[eids] = model
-                    score[eids] = metric_value
-                    tissue_type[eids] = data[0]
+            if metric_value > score[eid]:
+                # model is not from preferred tissue, but is better than the previously stored
+                # non-preferred tissue model
+                keep[eid] = model
+                score[eid] = metric_value
+                tissue_type[eid] = mtissue
 
     snp_weights = pd.concat(keep.values())
 
@@ -903,7 +945,6 @@ def build_weights(args):
 def import_weights(args):
     log = logging.getLogger(pyfocus.LOG)
     try:
-        #import pdb; pdb.set_trace()
         log.info("Preparing weight database")
         session = pyfocus.load_db("{}.db".format(args.output))
 
@@ -1024,7 +1065,15 @@ def build_focus_parser(subp):
     fmp.add_argument("--p-threshold", default=5e-8, type=float,
                      help="Minimum GWAS p-value required to perform TWAS fine-mapping.")
     fmp.add_argument("--ridge-term", default=0.1, type=float,
-                      help="Diagonal adjustment for linkage-disequilibrium (LD) estimate.")
+                     help="Diagonal adjustment for linkage-disequilibrium (LD) estimate.")
+    fmp.add_argument("--intercept", action="store_true", default=False,
+                     help="Whether to include an intercept term in the model")
+    fmp.add_argument("--max-genes", type=parse_pint, default=3,
+                     help="Maximum number of genes that can be causal")
+    fmp.add_argument("--prior-prob", type=parse_prob, default=1e-3,
+                     help="Prior probability for a gene to be causal")
+    fmp.add_argument("--prior-chisq", type=parse_chisq, default=40,
+                     help="Prior sample-size-scaled variance for causal gene effect sizes")
 
     # plotting options
     fmp.add_argument("-p", "--plot", action="store_true", default=False,

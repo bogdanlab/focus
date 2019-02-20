@@ -153,7 +153,7 @@ def estimate_cor(wmat, ldmat, intercept=False):
     wcor = mdot([scale, wcov, scale])
 
     if intercept:
-        inter = mdot([scale, wcov, ldmat])
+        inter = mdot([scale, wmat.T, ldmat])
         return wcor, inter
     else:
         return wcor, None
@@ -208,7 +208,6 @@ def get_resid(zscores, swld, wcor):
     alpha = numer / denom
     resid = zscores - intercept * alpha
 
-    # really this should be divided by the rank of wcor - 1
     s2 = mdot([resid, wcor_inv, resid]) / (rank - 1)
     inter_se = np.sqrt(s2 / denom)
     inter_z = alpha / inter_se
@@ -260,7 +259,7 @@ def bayes_factor(zscores, idx_set, wcor, prior_chisq, prb, use_log=True):
         return np.exp(cur_bf)
 
 
-def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, max_genes=None, ridge=0.1, prior_prob=1e-3, prior_chisq=40, plot=False):
+def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, max_genes=3, ridge=0.1, prior_prob=1e-3, prior_chisq=40, plot=False):
     """
     Perform a TWAS and fine-map the results.
 
@@ -315,8 +314,7 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
     else:
         inter_z = None
 
-    max_genes = 2
-    k = m if max_genes is None else max_genes
+    k = m if max_genes > m else max_genes
     null_res = m * np.log(1 - prior_prob)
     marginal = null_res
     # enumerate all subsets

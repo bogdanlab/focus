@@ -6,12 +6,20 @@ import pyfocus as pf
 from sqlalchemy import create_engine
 
 
-__all__ = ["import_predixcan", "export_predixcan"]
+__all__ = ["import_predixcan"]
+
+# TODO: implement exporting to predixcan/fusion
 
 
 def import_fusion(path, session):
     log = logging.getLogger(pf.LOG)
     raise NotImplementedError("import_fusion not implemented!")
+    return
+
+
+def export_fusion(path, session):
+    log = logging.getLogger(pf.LOG)
+    raise NotImplementedError("export_fusion not implemented!")
     return
 
 
@@ -80,4 +88,6 @@ def import_predixcan(path, name, tissue, assay, session):
 
 
 def export_predixcan(path, session):
-    pass
+    log = logging.getLogger(pf.LOG)
+    raise NotImplementedError("export_predixcan not implemented!")
+    return
