@@ -15,10 +15,15 @@ setuptools.setup(
     packages=["pyfocus"],
     package_data={'pyfocus': ['data/ld_blocks/*.bed']},
     install_requires=[
-          "numpy",
-          "scipy",
-          "pandas>=0.23.0",
-          "pandas-plink",
+        "sqlalchemy",
+        "numpy_sugar",
+        "numpy",
+        "pandas-plink",
+        "scipy",
+        "pandas>=0.23.0",
+        "glimix-core>=2.0.0",
+        "limix>=2.0.0",
+        "scikit-learn"
       ],
     scripts=[
         "bin/focus",
