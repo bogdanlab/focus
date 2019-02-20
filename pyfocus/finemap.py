@@ -12,12 +12,13 @@ from numpy.linalg import multi_dot as mdot
 __all__ = ["fine_map"]
 
 
-def create_output(meta_data, attr, zscores, pips, null_res, region):
+def create_output(meta_data, attr, zscores, pips, null_res, region, credible_set=0.9):
 
     # merge attributes
     df = pd.merge(meta_data, attr, left_on="model_id", right_index=True)
     df["twas_z"] = zscores
     df["pip"] = pips
+    df["in_cred_set"] = [0] * len(pips)
     df["region"] = region
 
     # sort by tx start site and we're good to go
@@ -44,6 +45,15 @@ def create_output(meta_data, attr, zscores, pips, null_res, region):
     null_dict["twas_z"] = 0
     null_dict["chrom"] = df["chrom"].values[0]
     df = df.append(null_dict, ignore_index=True)
+    df = df.sort_values(by=["pip"])
+
+    # add credible set flag
+    psum = np.sum(df.pip.values)
+    npost = df.pip.values / psum
+    csum = np.cumsum(npost)
+    in_cred_set = (1 - csum) <= credible_set
+    df.in_cred_set = in_cred_set.astype(int)
+    df = df.sort_values(by=["pip"], ascending=False)
 
     return df
 
@@ -131,7 +141,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     # Meta-data on the current model
     # what other things should we include in here?
     meta_data = wcollection.loc[idxs,
-                                ["ens_gene_id", "ens_tx_id", "mol_name", "tissue", "type", "chrom", "tx_start",
+                                ["ens_gene_id", "ens_tx_id", "mol_name", "tissue", "ref_name", "type", "chrom", "tx_start",
                                 "tx_stop", "inference", "model_id"]
     ]
 
@@ -259,7 +269,8 @@ def bayes_factor(zscores, idx_set, wcor, prior_chisq, prb, use_log=True):
         return np.exp(cur_bf)
 
 
-def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, max_genes=3, ridge=0.1, prior_prob=1e-3, prior_chisq=40, plot=False):
+def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, max_genes=3, ridge=0.1, prior_prob=1e-3,
+             prior_chisq=40, credible_level=0.9, plot=False):
     """
     Perform a TWAS and fine-map the results.
 
@@ -272,6 +283,7 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
     :param ridge: float ridge adjustment for LD estimation (default = 0.1)
     :param prior_prob: float prior probability for a gene to be causal
     :param prior_chisq: float prior effect-size variance scaled by GWAS sample size
+    :param credible_level: float the credible-level to compute credible gene sets (default = 0.9)
     :param plot: bool whether or not to generate visualizations/plots at the risk region
 
     :return: pandas.DataFrame containing the TWAS statistics and fine-mapping results if plot=False.
@@ -291,7 +303,6 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
 
     zscores = []
     # run local TWAS
-    # we need to check overlap somewhere in here
     for idx, weights in enumerate(wmat.T):
         log.debug("Computing TWAS association statistic for gene {}".format(meta_data.iloc[idx]["ens_gene_id"]))
         beta, se = assoc_test(weights, gwas, ldmat, heterogeneity)
@@ -347,7 +358,7 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
 
     # clean up and return results
     region = str(ref_geno).replace(" ", "")
-    df = create_output(meta_data, attr, zscores, pips, null_res, region)
+    df = create_output(meta_data, attr, zscores, pips, null_res, region, credible_set=credible_level)
 
     log.info("Completed fine-mapping at region {}".format(ref_geno))
     if plot:

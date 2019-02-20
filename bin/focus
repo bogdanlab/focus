@@ -798,7 +798,8 @@ def run_twas(args):
                 # fine-map, my dudes
                 result = pyfocus.fine_map(local_gwas, snp_weights, local_ref, intercept=args.intercept,
                                           max_genes=args.max_genes, ridge=args.ridge_term, prior_prob=args.prior_prob,
-                                          prior_chisq=args.prior_chisq, plot=args.plot)
+                                          prior_chisq=args.prior_chisq, credible_level=args.credible_level,
+                                          plot=args.plot)
 
                 # fine-map can break and return early if there are issues so check for non-None result
                 if result is not None:
@@ -871,28 +872,29 @@ def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", s
         # we can probably replace the regex with just the 'in' statement and a lowercase call at some point...
         if re.match(".*" + tissue + ".*", mtissue, flags=re.IGNORECASE) or \
                 (strict and tissue == mtissue):
-            # we have a match on tissue
+            # we have a match on preferred tissue
             if re.match(".*" + tissue + ".*", tissue_type[eid], flags=re.IGNORECASE) or \
                     (strict and tissue == tissue_type[eid]):
                 if metric_value > score[eid]:
-                    # model is from the same tissue and has a better predictive value
+                    # current model is from the same tissue and has a better predictive value
                     keep[eid] = model
                     score[eid] = metric_value
                     tissue_type[eid] = mtissue
             else:
-                # model is from the preferred tissue and should replace w/e was previously stored
+                # current model is from the preferred tissue and
+                # should replace non-preferred model tissue previously stored
                 keep[eid] = model
                 score[eid] = metric_value
                 tissue_type[eid] = mtissue
         else:
-            # current model is non preferred
+            # current model is non-preferred tissue
             if re.match(".*" + tissue + ".*", tissue_type[eid], flags=re.IGNORECASE) or \
                     (strict and tissue == tissue_type[eid]):
-                # previous model was from preferred tissue; skip
+                # stored model was from preferred tissue; skip
                 continue
 
             if metric_value > score[eid]:
-                # model is not from preferred tissue, but is better than the previously stored
+                # current model is not from non-preferred tissue, but is better than the previously stored
                 # non-preferred tissue model
                 keep[eid] = model
                 score[eid] = metric_value
@@ -1083,13 +1085,15 @@ def build_focus_parser(subp):
     fmp.add_argument("--ridge-term", default=0.1, type=float,
                      help="Diagonal adjustment for linkage-disequilibrium (LD) estimate.")
     fmp.add_argument("--intercept", action="store_true", default=False,
-                     help="Whether to include an intercept term in the model")
+                     help="Whether to include an intercept term in the model.")
     fmp.add_argument("--max-genes", type=parse_pint, default=3,
-                     help="Maximum number of genes that can be causal")
+                     help="Maximum number of genes that can be causal.")
     fmp.add_argument("--prior-prob", type=parse_prob, default=1e-3,
-                     help="Prior probability for a gene to be causal")
+                     help="Prior probability for a gene to be causal.")
     fmp.add_argument("--prior-chisq", type=parse_chisq, default=40,
-                     help="Prior sample-size-scaled variance for causal gene effect sizes")
+                     help="Prior sample-size-scaled variance for causal gene effect sizes.")
+    fmp.add_argument("--credible-level", type=parse_prob, default=0.9,
+                     help="Probability value to determine the credible gene set.")
 
     # plotting options
     fmp.add_argument("-p", "--plot", action="store_true", default=False,
