@@ -16,7 +16,7 @@ def create_output(meta_data, attr, zscores, pips, null_res, region):
 
     # merge attributes
     df = pd.merge(meta_data, attr, left_on="model_id", right_index=True)
-    df["z"] = zscores
+    df["twas_z"] = zscores
     df["pip"] = pips
     df["region"] = region
 
@@ -41,7 +41,7 @@ def create_output(meta_data, attr, zscores, pips, null_res, region):
     null_dict["type"] = "NULL"
     null_dict["pip"] = null_res
     null_dict["region"] = region
-    null_dict["z"] = 0
+    null_dict["twas_z"] = 0
     null_dict["chrom"] = df["chrom"].values[0]
     df = df.append(null_dict, ignore_index=True)
 
@@ -79,7 +79,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     # collapse the gene models into a single weight matrix
     idxs = []
     final_df = None
-    for eid, model in wcollection.groupby("ens_gene_id"):
+    for eid, model in wcollection.groupby(["ens_gene_id", "tissue", "inference", "ref_name"]):
         log.debug("Aligning weights for gene {}".format(eid))
 
         # merge local model with the reference panel
@@ -94,17 +94,20 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
                                              m_merged[pf.LDRefPanel.A2COL])
 
         # skip genes whose overlapping weights are all 0s
-        if np.isclose(np.var(m_merged["effect"]), 0):
+        if len(m_merged) > 1 and np.isclose(np.var(m_merged["effect"]), 0):
             continue
 
         # keep model_id around to grab other attributes (pred-R2, etc) later on
-        idxs.append(model.index[0])
+        cur_idx = model.index[0]
+        idxs.append(cur_idx)
 
         # perform a union (outer merge) to build the aligned/flipped weight (possibly jagged) matrix
         if final_df is None:
             final_df = m_merged[[pf.GWAS.SNPCOL, "effect"]]
+            final_df = final_df.rename(index=str, columns={"effect": "model_{}".format(cur_idx)})
         else:
             final_df = pd.merge(final_df, m_merged[[pf.GWAS.SNPCOL, "effect"]], how="outer", on="SNP")
+            final_df = final_df.rename(index=str, columns={"effect": "model_{}".format(cur_idx)})
 
     # break out early
     if len(idxs) == 0:
@@ -119,10 +122,10 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     ldmat = ref_geno.estimate_ld(ref_snps, adjust=ridge)
 
     # subset down to just actual GWAS data
-    ref_snps = ref_snps[pf.GWAS.REQ_COLS]
+    gwas = ref_snps[pf.GWAS.REQ_COLS]
 
     # need to replace NA with 0 due to jaggedness across genes
-    wmat = final_df.loc[:, final_df.columns != "SNP"].values
+    wmat = ref_snps.filter(like="model").values  #ref_snps.loc[:, final_df.columns != "SNP"].values
     wmat[np.isnan(wmat)] = 0.0
 
     # Meta-data on the current model
@@ -132,7 +135,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
                                 "tx_stop", "inference", "model_id"]
     ]
 
-    return ref_snps, wmat, meta_data, ldmat
+    return gwas, wmat, meta_data, ldmat
 
 
 def estimate_cor(wmat, ldmat, intercept=False):

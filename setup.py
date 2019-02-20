@@ -6,8 +6,8 @@ with open("README.md", "r") as fh:
 setuptools.setup(
     name="pyfocus",
     version="0.1",
-    author="Nick Mancuso",
-    author_email="nick.mancuso@gmail.com",
+    author="Nicholas Mancuso, Ruth Johnson",
+    author_email="nick.mancuso@gmail.com, ruthjohnson@ucla.com",
     description="Fine-map transcriptome-wide association studies",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -17,7 +17,7 @@ setuptools.setup(
     install_requires=[
           "numpy",
           "scipy",
-          "pandas>=0.17.0",
+          "pandas>=0.23.0",
           "pandas-plink",
       ],
     scripts=[

@@ -224,11 +224,6 @@ def filter_frq(frq, log, args):
     return ii & ~jj
 
 
-def filter_alleles(a):
-    """Remove alleles that do not describe strand-unambiguous SNPs"""
-    return a.isin(pyfocus.VALID_SNPS)
-
-
 def parse_dat(dat_gen, convert_colname, log, args):
     """Parse and filter a sumstats file chunk-wise"""
 
@@ -282,7 +277,7 @@ def parse_dat(dat_gen, convert_colname, log, args):
         old = new
         dat.A1 = dat.A1.str.upper()
         dat.A2 = dat.A2.str.upper()
-        ii &= filter_alleles(dat.A1 + dat.A2)
+        ii &= pyfocus.check_valid_snp(dat.A1, dat.A2)
         new = ii.sum()
         drops['A'] += old - new
 
@@ -761,11 +756,12 @@ def run_twas(args):
                     log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
                     continue
 
-                # TODO: whittle weights down based on decision framework for gene prioritization
-                # TODO: e.g., tissue prioritized, then R2 etc
-                # snp_weights = ...
+                if args.tissue is not None:
+                    log.info("Prioritzing genes by {} tissue then on predictive performance at region {}".format(args.tissue, local_ref))
+                    snp_weights = get_tissue_prioritized_genes(snp_weights, args.tissue, session, metric="cv.R2", strict=args.strict_tissue)
 
                 # fine-map, my dudes
+                #import pdb; pdb.set_trace()
                 result = pyfocus.fine_map(local_gwas, snp_weights, local_ref, ridge=args.ridge_term, plot=args.plot)
 
                 # fine-map can break and return early if there are issues so check for non-none result
@@ -785,6 +781,68 @@ def run_twas(args):
         log.info("Finished twas & fine-mapping")
 
     return 0
+
+
+def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", strict=False):
+    log = logging.getLogger(pyfocus.LOG)
+
+    keep = dict()
+    score = dict()
+    tissue_type = dict()
+
+    # "ens_tx_id" is likely to be None which breaks this
+    # just use gene-id for now until Tx models become fully incorporated
+    for eids, models in snp_weights.groupby(["ens_gene_id"]):
+        for data, model in models.groupby(["tissue", "inference", "ref_name"]):
+            # if there are multiple models for a gene we need to select the prioritized tissue first
+            # and if it isn't represented select the model with best metric (e.g., cv.R2, h2g, etc.)
+            attr = pd.read_sql(session.query(pyfocus.ModelAttribute)
+                               .filter(pyfocus.ModelAttribute.model_id.in_(model.model_id.values.astype(object)))
+                               .statement, con=session.connection())
+
+            if metric not in attr.attr_name.values:
+                log.warning("Gene {} does not have {} and cannot evaluate performance. Skipping.".format(metric, eids))
+                continue
+
+            metric_value = attr[attr.attr_name == metric]["value"].values[0]
+            if eids not in keep:
+                keep[eids] = model
+                score[eids] = metric_value
+                tissue_type[eids] = data[0]
+                continue
+
+            if re.match(".*" + tissue + ".*", data[0], flags=re.IGNORECASE) or \
+                    (strict and tissue == data[0]):
+                # we have a match on tissue
+                if re.match(".*" + tissue + ".*", tissue_type[eids], flags=re.IGNORECASE) or \
+                        (strict and tissue == tissue_type[eids]):
+                    if metric_value > score[eids]:
+                        # model is from the same tissue and has a better predictive value
+                        keep[eids] = model
+                        score[eids] = metric_value
+                        tissue_type[eids] = data[0]
+                else:
+                    # model is from the preferred tissue and should replace w/e was previously stored
+                    keep[eids] = model
+                    score[eids] = metric_value
+                    tissue_type[eids] = data[0]
+            else:
+                # current model is non preferred
+                if re.match(".*" + tissue + ".*", tissue_type[eids], flags=re.IGNORECASE) or \
+                        (strict and tissue == tissue_type[eids]):
+                    # previous model was from preferred tissue; skip
+                    continue
+
+                if metric_value > score[eids]:
+                    # model is not from preferred tissue, but is better than the previously stored
+                    # non-preferred tissue model
+                    keep[eids] = model
+                    score[eids] = metric_value
+                    tissue_type[eids] = data[0]
+
+    snp_weights = pd.concat(keep.values())
+
+    return snp_weights
 
 
 def build_weights(args):
@@ -959,9 +1017,12 @@ def build_focus_parser(subp):
                            "Start and stop values may contain kb/mb modifiers.")
 
     # fine-map general options
+    fmp.add_argument("--tissue",
+                     help="Name of tissue for tissue-prioritized fine-mapping. Relaxed matching. E.g., 'adipose' matches 'Adipose_subcutaneous'.")
+    fmp.add_argument("--strict-tissue", action="store_true",
+                     help="Use strict-matching of relevant tissue rather than relaxed match. E.g., 'adipose' does not match 'Adipose_subcutaneous'.")
     fmp.add_argument("--p-threshold", default=5e-8, type=float,
                      help="Minimum GWAS p-value required to perform TWAS fine-mapping.")
-
     fmp.add_argument("--ridge-term", default=0.1, type=float,
                       help="Diagonal adjustment for linkage-disequilibrium (LD) estimate.")
 
