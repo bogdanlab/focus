@@ -820,6 +820,21 @@ def run_twas(args):
 
 
 def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", strict=False):
+    """
+    Reduce the set of models to a unique set of genes. If a gene has multiple models, the function first tries
+    to select the relevant-tissue (i.e. `tissue`) model first. If multiple models are in the relevant `tissue`
+    then the model with the best `metric` is selected. If no model is found for a gene in the relevant `tissue`
+    then the model with the best `metric` in a proxy tissue is selected.
+
+    :param snp_weights: pandas.DataFrame snp_weights found from query
+    :param tissue: str the relevant tissue to prioritize
+    :param session: sqlalchemy.Session the database session
+    :param metric: str the metric to select models in proxy tissues, or when there are multiple models in the relevant tissue
+    :param strict: bool whether to use strict-matching (i.e. exact match) for tissue name in the database. When strict
+    is False models only need to have case-insensitive `tissue` as a substring in the database entry (default False).
+
+    :return: pandas.DataFrame tissue-prioritized snp_weights for downstream TWAS + fine-mapping
+    """
     log = logging.getLogger(pyfocus.LOG)
 
     keep = dict()
@@ -828,11 +843,9 @@ def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", s
 
     mids = snp_weights.model_id.unique().astype(object)
 
-    # if there are multiple models for a gene we need to select the prioritized tissue first
-    # and if it isn't represented select the model with best metric (e.g., cv.R2, h2g, etc.)
     attrs = pd.read_sql(session.query(pyfocus.ModelAttribute)
-                       .filter(pyfocus.ModelAttribute.model_id.in_(mids))
-                       .statement, con=session.connection())
+                        .filter(pyfocus.ModelAttribute.model_id.in_(mids))
+                        .statement, con=session.connection())
 
     # "ens_tx_id" is likely to be None which breaks this
     # just use gene-id for now until Tx models become fully incorporated
@@ -846,6 +859,8 @@ def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", s
             log.warning("Gene {} does not have {} and cannot evaluate performance. Skipping.".format(eid, metric))
             continue
 
+        # if there are multiple models for a gene we need to select the prioritized tissue first
+        # and if it isn't represented select the model with best metric (e.g., cv.R2, h2g, etc.)
         metric_value = attr[attr.attr_name == metric]["value"].values[0]
         if eid not in keep:
             keep[eid] = model
@@ -853,6 +868,7 @@ def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", s
             tissue_type[eid] = mtissue
             continue
 
+        # we can probably replace the regex with just the 'in' statement and a lowercase call at some point...
         if re.match(".*" + tissue + ".*", mtissue, flags=re.IGNORECASE) or \
                 (strict and tissue == mtissue):
             # we have a match on tissue
