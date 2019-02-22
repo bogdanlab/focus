@@ -4,6 +4,8 @@ FOCUS (Fine-mapping Of CaUsal gene Sets) is software to fine-map transcriptome-w
 
 FOCUS is able to import weights from PrediXcan (n.b., FUSION import is underway) or can train models directly if individual level data is available.
 
+This is an initial draft of the README and extensive documentation is coming soon.
+
 Installing
 ----------
 We currently only support pip for installation:
