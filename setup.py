@@ -16,11 +16,11 @@ setuptools.setup(
     package_data={'pyfocus': ['data/ld_blocks/*.bed']},
     install_requires=[
         "sqlalchemy",
-        "numpy_sugar",
         "numpy",
-        "pandas-plink",
         "scipy",
+        "numpy-sugar",
         "pandas>=0.23.0",
+        "pandas-plink",
         "glimix-core>=2.0.0",
         "limix>=2.0.0",
         "scikit-learn"
@@ -30,7 +30,7 @@ setuptools.setup(
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: GPL License",
+        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Operating System :: OS Independent",
     ],
 )
