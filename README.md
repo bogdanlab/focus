@@ -1,4 +1,17 @@
-# focus
-FOCUS: Fine-mapping Of CaUsal gene Sets
+FOCUS
+=====
 
-Documentation coming soon.
+TBD
+
+Installing
+----------
+TBD
+
+
+Example
+-------
+TBD
+
+Notes
+-----
+TBD
