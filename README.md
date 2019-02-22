@@ -80,7 +80,7 @@ If you have any questions or comments please contact nmancuso@mednet.ucla.edu
 
 For performing various inferences using summary data from large-scale GWASs please find the following useful software:
 
-1. Association between predicted expression and complex trait/disease [FUSION](https://github.com/gusevlab/fusion_twas)
+1. Association between predicted expression and complex trait/disease [FUSION](https://github.com/gusevlab/fusion_twas) and [PrediXcan](https://github.com/hakyimlab/PrediXcan)
 2. Estimating local heritability or genetic correlation [HESS](https://github.com/huwenboshi/hess)
 3. Estimating genome-wide heritability or genetic correlation [UNITY](https://github.com/bogdanlab/UNITY)
 4. Fine-mapping using summary-data [PAINTOR](https://github.com/gkichaev/PAINTOR_V3.0)
