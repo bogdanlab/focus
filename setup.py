@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 st.setup(
     name="pyfocus",
-    version="0.1",
+    version="0.2",
     author="Nicholas Mancuso, Ruth Johnson",
     author_email="nick.mancuso@gmail.com, ruthjohnson@ucla.com",
     description="Fine-map transcriptome-wide association studies",
