@@ -46,7 +46,11 @@ There are currently two ways to create a QTL-weight database for FOCUS: 1) train
 TBD
 
 ### Importing from PrediXcan
-Importing weights into a single FOCUS database using multiple PrediXcan databases is straightforward. The syntax to import is: `focus import PREDIXCAN_DB_FILE predixcan --tissue TISSUE_TYPE --name GTEx --assay rnaseq --output DB_NAME`. Using this command focus will import weights from the `PREDIXCAN_DB_FILE.db` sqlite database file, mark that the weights correspond to `TISSUE_TYPE`, the name of the reference panel is `GTEx` and the original assay was `rnaseq`. This will create a FOCUS-specific sqlite database named`DB_NAME.db`. By default if the `--output DB_NAME` setting matches an existing database, then FOCUS will automatically append models, rather than overwrite.
+Importing weights into a single FOCUS database using multiple PrediXcan databases is straightforward. The syntax to import is: 
+
+    focus import PREDIXCAN_DB_FILE predixcan --tissue TISSUE_TYPE --name GTEx --assay rnaseq --output DB_NAME
+    
+Using this command focus will import weights from the `PREDIXCAN_DB_FILE.db` sqlite database file, mark that the weights correspond to `TISSUE_TYPE`, the name of the reference panel is `GTEx` and the original assay was `rnaseq`. This will create a FOCUS-specific sqlite database named`DB_NAME.db`. By default if the `--output DB_NAME` setting matches an existing database, then FOCUS will automatically append models, rather than overwrite.
 
 The following script will compile all GTEx-v7 weights into a single database named `gtex_v7.db` (nb: takes ~ 4 hours to run as it is mostly I/O bound):
 ```
