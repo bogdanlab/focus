@@ -32,47 +32,17 @@ depending where you entered it.
 
 *A conda-forge recipe that should greatly simplify installation is currently underway.*
 
-Fine-mapping
-------------
-TBD
+Example
+-------
+Here is an example of how to perform LDL fine-mapping while prioritizing predictive models from adipose tissues:
 
-Creating a weight data-base
----------------------------
-FOCUS aims to fine-map across all observed associations at a risk region. Ideally this will be done using many prediction models trained across a variety of tissues and assays. In order to perform efficient inference in this setting FOCUS uses a custom database to query all relevant weights at a given risk region.
-
-There are currently two ways to create a QTL-weight database for FOCUS: 1) training on individual-level data from reference panels and 2) importing from PrediXcan (FUSION is in the works). 
-
-### Training on individual-level data
-TBD
-
-### Importing from PrediXcan
-Importing weights into a single FOCUS database using multiple PrediXcan databases is straightforward. The syntax to import is: 
-
-    focus import PREDIXCAN_DB_FILE predixcan --tissue TISSUE_TYPE --name GTEx --assay rnaseq --output DB_NAME
+    focus finemap LDL_2010.clean.sumstats.gz 1000G.EUR.QC.1 gtex_v7.db --chr 1 --tissue adipose --out LDL_2010.chr1
     
-Using this command focus will import weights from the `PREDIXCAN_DB_FILE.db` sqlite database file, mark that the weights correspond to `TISSUE_TYPE`, the name of the reference panel is `GTEx` and the original assay was `rnaseq`. This will create a FOCUS-specific sqlite database named`DB_NAME.db`. By default if the `--output DB_NAME` setting matches an existing database, then FOCUS will automatically append models, rather than overwrite.
+This command will scan `LDL_2010.clean.sumstats.gz` for risk regions and then perform TWAS+fine-mapping using LD estimated from plink-formatted `1000G.EUR.QC.1` and eQTL weights from `gtex_v7.db`. Please see the [wiki](https://github.com/bogdanlab/focus/wiki) for more details on how to use focus.
 
-The following script will compile all GTEx-v7 weights into a single database named `gtex_v7.db` (nb: takes ~ 4 hours to run as it is mostly I/O bound):
-```
-#!/bin/bash
-
-tissues=(Adipose_Subcutaneous Adipose_Visceral_Omentum Adrenal_Gland Artery_Aorta Artery_Coronary Artery_Tibial Brain_Amygdala Brain_Anterior_cingulate_cortex_BA24 Brain_Caudate_basal_ganglia Brain_Cerebellar_Hemisphere Brain_Cerebellum Brain_Cortex Brain_Frontal_Cortex_BA9 Brain_Hippocampus Brain_Hypothalamus Brain_Nucleus_accumbens_basal_ganglia Brain_Putamen_basal_ganglia Brain_Spinal_cord_cervical_c-1 Brain_Substantia_nigra Breast_Mammary_Tissue Cells_EBV-transformed_lymphocytes Cells_Transformed_fibroblasts Colon_Sigmoid Colon_Transverse Esophagus_Gastroesophageal_Junction Esophagus_Mucosa Esophagus_Muscularis Heart_Atrial_Appendage Heart_Left_Ventricle Liver Lung Minor_Salivary_Gland Muscle_Skeletal Nerve_Tibial Ovary Pancreas Pituitary Prostate Skin_Not_Sun_Exposed_Suprapubic Skin_Sun_Exposed_Lower_leg Small_Intestine_Terminal_Ileum Spleen Stomach Testis Thyroid Uterus Vagina Whole_Blood) 
-
-
-n=${#tissues[@]}
-
-# if db already exists wipe it
-if [ -f gtex_v7.db ]; then
-    rm gtex_v7.db
-fi
-
-for idx in `seq 0 $((n - 1))`
-do
-    tissue=${tissues[$idx]}
-
-    focus import gtex_v7_${tissue}_imputed_europeans_tw_0.5_signif.db predixcan --tissue ${tissue} --name GTEx --assay rnaseq --output gtex_v7
-done
-```
+Notes
+-----
+TBD
 
 Software and support
 -----
