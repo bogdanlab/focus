@@ -20,7 +20,7 @@ by executing
 
     export PATH=`python -m site --user-base`/bin/:$PATH
     
-which can be saved in `.bashrc` or `.bash_profile`. To reload the environment type `source ~/.bashrc` or `source .bash_profile` depending where you entered it.
+which can be saved in `~/.bashrc` or `~/.bash_profile`. To reload the environment type `source ~/.bashrc` or `~/source .bash_profile` depending where you entered it.
 
 *We currently only support Python3.6+. *A conda-forge recipe that should greatly simplify installation is currently underway.*
 
