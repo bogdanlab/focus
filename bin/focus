@@ -1205,13 +1205,13 @@ def main(argsv):
     # parse arguments
     args = argp.parse_args(argsv)
 
-    cmd_str = get_command_string(argsv)
-
     # hack to check that at least one sub-command was selected in 3.6
     # 3.7 -might- have fixed this bug
     if not hasattr(args, "func"):
         argp.print_help()
         return 2  # command-line error
+
+    cmd_str = get_command_string(argsv)
 
     masthead =  "===================================" + os.linesep
     masthead += "              FOCUS v{}            ".format(pyfocus.VERSION) + os.linesep
