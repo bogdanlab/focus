@@ -38,7 +38,9 @@ Here is an example of how to perform LDL fine-mapping while prioritizing predict
 
     focus finemap LDL_2010.clean.sumstats.gz 1000G.EUR.QC.1 gtex_v7.db --chr 1 --tissue adipose --out LDL_2010.chr1
     
-This command will scan `LDL_2010.clean.sumstats.gz` for risk regions and then perform TWAS+fine-mapping using LD estimated from plink-formatted `1000G.EUR.QC.1` and eQTL weights from `gtex_v7.db`. Please see the [wiki](https://github.com/bogdanlab/focus/wiki) for more details on how to use focus.
+This command will scan `LDL_2010.clean.sumstats.gz` for risk regions and then perform TWAS+fine-mapping using LD estimated from plink-formatted `1000G.EUR.QC.1` and eQTL weights from `gtex_v7.db`. 
+
+Please see the [wiki](https://github.com/bogdanlab/focus/wiki) for more details on how to use focus.
 
 Notes
 -----
