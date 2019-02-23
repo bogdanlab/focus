@@ -2,8 +2,6 @@ FOCUS
 =====
 FOCUS (Fine-mapping Of CaUsal gene Sets) is software to fine-map transcriptome-wide association study statistics at genomic risk regions. The software takes as input summary GWAS data along with eQTL weights and outputs a credible set of _genes_ to explain observed genomic risk.
 
-FOCUS is able to import weights from PrediXcan (n.b., FUSION import is underway) or can train models directly if individual level data is available.
-
 This is an initial draft of the README and extensive documentation is coming soon.
 
 Installing
@@ -22,15 +20,9 @@ by executing
 
     export PATH=`python -m site --user-base`/bin/:$PATH
     
-which can be saved in `.bashrc` or `.bash_profile`. To reload the environment type
-    
-    source ~/.bashrc` or `source .bash_profile 
+which can be saved in `.bashrc` or `.bash_profile`. To reload the environment type `source ~/.bashrc` or `source .bash_profile` depending where you entered it.
 
-depending where you entered it.
-
-*We currently only support Python3.6+*
-
-*A conda-forge recipe that should greatly simplify installation is currently underway.*
+*We currently only support Python3.6+. *A conda-forge recipe that should greatly simplify installation is currently underway.*
 
 Example
 -------
@@ -56,4 +48,4 @@ For performing various inferences using summary data from large-scale GWASs plea
 2. Estimating local heritability or genetic correlation [HESS](https://github.com/huwenboshi/hess)
 3. Estimating genome-wide heritability or genetic correlation [UNITY](https://github.com/bogdanlab/UNITY)
 4. Fine-mapping using summary-data [PAINTOR](https://github.com/gkichaev/PAINTOR_V3.0)
-5. Imputing summary statistics using LD[FIZI](https://github.com/bogdanlab/fizi)
+5. Imputing summary statistics using LD [FIZI](https://github.com/bogdanlab/fizi)
