@@ -7,7 +7,7 @@ import scipy.linalg as lin
 
 from itertools import chain, combinations
 from numpy.linalg import multi_dot as mdot
-
+from .viz import focus_plot
 
 __all__ = ["fine_map"]
 
@@ -362,6 +362,9 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
 
     log.info("Completed fine-mapping at region {}".format(ref_geno))
     if plot:
-        return df, []
+        log.info("Creating FOCUS plots")
+        plot_arr = focus_plot(wcor, df)
+
+        return df, plot_arr
     else:
         return df
