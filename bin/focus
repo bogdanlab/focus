@@ -1111,7 +1111,7 @@ def build_focus_parser(subp):
 
 def build_weights_parser(subp):
     # add weight-building parser
-    wgtp = subp.add_parser("build", description="Compute weights for downstream TWAS and fine-mapping.")
+    wgtp = subp.add_parser("train", description="Compute weights for downstream TWAS and fine-mapping.")
 
     # main arguments
     wgtp.add_argument("genotype",
@@ -1187,7 +1187,8 @@ def main(argsv):
     # setup main parser
     argp = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     subp = argp.add_subparsers(
-        help="Subcommands: munge to clean up summary statistics. finemap to perform run twas & finemap.")
+        help="Subcommands: munge to clean up summary statistics. finemap to perform run twas & finemap."
+             " train to train models and build a database. import to import weights from existing databases.")
 
     # add subparsers for focus commands
     munp = build_munge_parser(subp)
