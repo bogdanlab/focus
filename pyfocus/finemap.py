@@ -362,7 +362,7 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
 
     log.info("Completed fine-mapping at region {}".format(ref_geno))
     if plot:
-        log.info("Creating FOCUS plots")
+        log.info("Creating FOCUS plots at region {}".format(ref_geno))
         plot_arr = focus_plot(wcor, df)
 
         return df, plot_arr

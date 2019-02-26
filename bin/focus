@@ -806,7 +806,8 @@ def run_twas(args):
                     if args.plot:
                         result, plots = result
                         for i,plot in enumerate(plots):
-                            plot.savefig("focus_fig_%d.pdf" % i, format='pdf', dpi=1700)
+                            outfile = "focus_fig_{}_{}_{}.pdf".format(chrom, int(start), int(stop))
+                            plot.savefig(outfile, format='pdf', dpi=1700)
 
                     pyfocus.write_output(result, output, append=written)
                     written = True
