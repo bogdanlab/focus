@@ -805,9 +805,9 @@ def run_twas(args):
                 if result is not None:
                     if args.plot:
                         result, plots = result
-                        for i,plot in enumerate(plots):
-                            outfile = "focus_fig_{}_{}_{}.pdf".format(chrom, int(start), int(stop))
-                            plot.savefig(outfile, format='pdf', dpi=1700)
+                        for i, plot in enumerate(plots):
+                            fig_name = "{}.chr{}.{}.{}.pdf".format(args.output, chrom, int(start), int(stop))
+                            plot.savefig(fig_name, format='pdf', dpi=300)
 
                     pyfocus.write_output(result, output, append=written)
                     written = True

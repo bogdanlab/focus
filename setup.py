@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 st.setup(
     name="pyfocus",
-    version="0.2",
+    version="0.3",
     author="Nicholas Mancuso, Ruth Johnson",
     author_email="nick.mancuso@gmail.com, ruthjohnson@ucla.com",
     description="Fine-map transcriptome-wide association studies",
@@ -15,7 +15,10 @@ st.setup(
     packages=st.find_packages(),  #["pyfocus"],
     package_data={'pyfocus': ['data/ld_blocks/*.bed']},
     install_requires=[
+        "opencv-python",
         "sqlalchemy",
+        "matplotlib",
+        "seaborn",
         "numpy",
         "scipy",
         "numpy-sugar",

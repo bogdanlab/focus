@@ -7,7 +7,7 @@ import scipy.linalg as lin
 
 from itertools import chain, combinations
 from numpy.linalg import multi_dot as mdot
-from .viz import focus_plot
+import pyfocus as pf
 
 __all__ = ["fine_map"]
 
@@ -45,7 +45,6 @@ def create_output(meta_data, attr, zscores, pips, null_res, region, credible_set
     null_dict["twas_z"] = 0
     null_dict["chrom"] = df["chrom"].values[0]
     df = df.append(null_dict, ignore_index=True)
-    df = df.sort_values(by=["pip"])
 
     # add credible set flag
     psum = np.sum(df.pip.values)
@@ -53,7 +52,6 @@ def create_output(meta_data, attr, zscores, pips, null_res, region, credible_set
     csum = np.cumsum(npost)
     in_cred_set = (1 - csum) <= credible_set
     df.in_cred_set = in_cred_set.astype(int)
-    df = df.sort_values(by=["pip"], ascending=False)
 
     return df
 
@@ -363,8 +361,10 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
     log.info("Completed fine-mapping at region {}".format(ref_geno))
     if plot:
         log.info("Creating FOCUS plots at region {}".format(ref_geno))
-        plot_arr = focus_plot(wcor, df)
+        plot_arr = pf.focus_plot(wcor, df)
 
+        df = df.sort_values(by=["pip"], ascending=False)
         return df, plot_arr
     else:
+        df = df.sort_values(by=["pip"], ascending=False)
         return df
