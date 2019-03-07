@@ -38,12 +38,53 @@ def make_scatter(twas_df, scale="logp"):
         ax.set_ylim([abs_bound * -1, abs_bound])
         ylabel = 'Z-score'
     elif scale == "logp":
-        twas_df["logp"] = -stats.chi2.logsf(twas_df["twas_z"].values ** 2, 1)
-        ax = sns.stripplot(x="mol_name", y="logp", data=twas_df, color='black', size=5)
+        size_arr = []
+        color_arr = []
+        custom_palette = ["#e4f1fe", "#89c4f4", "#2574a9", "#013243"]
+        size_palette = [4, 8, 10, 12]
+
+        for i, row in twas_df.iterrows():
+            pip = row['pip']
+            if pip >= 0 and pip < .20:
+                color_arr.append(custom_palette[0])
+                size_arr.append(size_palette[0])
+            elif pip >= .20 and pip < .40:
+                color_arr.append(custom_palette[1])
+                size_arr.append(size_palette[1])
+            elif pip >=.40 and pip <.60:
+                color_arr.append(custom_palette[2])
+                size_arr.append(size_palette[2])
+            elif pip >= .60 and pip <.80:
+                color_arr.append(custom_palette[3])
+                size_arr.append(size_palette[3])
+            else:
+                color_arr.append(custom_palette[3])
+                size_arr.append(size_palette[3])
+
+        twas_df = twas_df.assign(logp=-stats.chi2.logsf(twas_df["twas_z"].values ** 2, 1))
+        n_rows = len(twas_df.index)
+        x_values = np.arange(1,n_rows + 1)
+        ax = sns.scatterplot(x=x_values, y="logp", data=twas_df, legend=False, size=size_arr, color=color_arr, edgecolor='black')
         ylabel = "-log10 p-value"
+        plt.legend(loc="best", fontsize=10, scatterpoints=1)
+        from matplotlib.patches import Patch
+        from matplotlib.lines import Line2D
+        legend_elements = [
+                   Line2D([0], [0], marker='o', color='w', label='[0.0, 0.2)',
+                          markerfacecolor=custom_palette[0], markersize=size_palette[0], markeredgecolor='k'),
+                  Line2D([1], [1], marker='o', color='w', label='[0.2, 0.4)',
+                         markerfacecolor=custom_palette[1], markersize=size_palette[1], markeredgecolor='k'),
+               Line2D([2], [2], marker='o', color='w', label='[0.4, 0.6)',
+                      markerfacecolor=custom_palette[2], markersize=size_palette[2], markeredgecolor='k'),
+               Line2D([3], [3], marker='o', color='w', label='[0.8, 1.0]',
+                      markerfacecolor=custom_palette[3], markersize=size_palette[3], markeredgecolor='k')]
+        ax.legend(handles=legend_elements, loc='best', title="PIP")
+
     else:
         raise ValueError("Invalid scale for scatter-plot")
 
+    n_rows = len(twas_df.index)
+    plt.xticks(np.arange(1,n_rows + 1, 1.0))
     gene_names = twas_df['mol_name'].values
     ax.set_xticklabels(gene_names, rotation=90, ha="center")
 
