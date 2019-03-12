@@ -969,7 +969,7 @@ def import_weights(args):
         if args.type == "predixcan":
             pyfocus.import_predixcan(args.path, args.name, args.tissue, args.assay, session)
         else:
-            raise NotImplementedError("FUSION import not yet implemented.")
+            pyfocus.import_fusion(args.path, args.name, args.tissue, args.assay, session)
 
     except Exception as err:
         log.error(err)
@@ -1160,7 +1160,7 @@ def build_import_weights_parser(subp):
 
     # main arguments
     impt.add_argument("path",
-                      help="Path to genotype data")
+                      help="Path to FUSION/PrediXcan database")
     impt.add_argument("type", choices=["fusion", "predixcan"], type=lambda s: s.lower(),
                       help="Datatype to import (e.g., FUSION or PrediXcan)")
 
