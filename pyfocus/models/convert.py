@@ -25,9 +25,20 @@ def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
     """
     import re
     import os
-    import mygene
+    import warnings
+
+    try:
+        import mygene
+        # suppress warnings about R build
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            import rpy2.robjects as robj
+    except ImportError:
+        log.error("Import submodule requires mygene and rpy2 to be installed.")
+        raise
+
     import numpy as np
-    import rpy2.robjects as robj
+
 
     log = logging.getLogger(pf.LOG)
 
@@ -46,11 +57,6 @@ def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
     with open(path, "rt") as fusion_info:
         header = fusion_info.readline()
 
-        # batch here w/ this command...
-        # we could also pipeline this to a sep thread by batching in groups;
-        # it is IO-bound so it should speed things up drastically
-        #results = mg.querymany(G_NAMES, scopes='symbol', fields=['ensembl'], species="human")
-
         for line in fusion_info:
             wgt_name, g_name, chrom, txstart, txstop = line.split()
 
@@ -61,14 +67,19 @@ def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
             # this call should create the following:
             # 'wgt.matrix', 'snps', 'cv.performance', 'hsq', and 'hsq.pv'
             wgt_path = "{}/{}".format(local_dir, wgt_name)
+
+            # this is more of a bottleneck than querying the web using mygene
+            # if it is more IO than computational we can push this to prod/consum queue + thread approach
+            # but likely not worth it since importing is done rarely
             load_func(wgt_path)
 
             # this mygene API is so nice...
-            # we should batch this or something at some point to speed things up...
             result = mg.query(g_name, scopes='symbol', fields=['ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias'],
                               species="human")
 
             gene_info = dict()
+            id_dict = dict()
+            # hits are ordered by match quality.
             for hit in result['hits']:
                 if "ensembl" not in hit:
                     # nothing in db
@@ -76,6 +87,9 @@ def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
 
                 if hit["symbol"] != g_name and "alias" in hit and g_name not in hit["alias"]:
                     # not direct match
+                    continue
+
+                if "genomic_pos" not in hit:
                     continue
 
                 ens = hit["ensembl"]
@@ -88,19 +102,24 @@ def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
                 if type(pos) is dict:
                     pos = [pos]
 
-                for idx, e_hit in enumerate(ens):
-                    # skip non-primary assembles. they have weird CHR entries e.g., CHR_HSCHR1_1_CTG3
-                    if not re.match("[0-9]{1,2}|X|Y", pos[idx]["chr"], re.IGNORECASE):
+                # grab the type for when we match against pos
+                for e_hit in ens:
+                    id_dict[e_hit["gene"]] = e_hit["type_of_gene"]
+
+                for p_hit in pos:
+                    if not re.match("[0-9]{1,2}|X|Y", p_hit["chr"], re.IGNORECASE):
                         continue
+                    g_id = p_hit["ensemblgene"]
+                    g_type = id_dict.get(p_hit["ensemblgene"])
 
                     if len(gene_info) == 0:
                         # grab any info if we haven't yet
-                        gene_info["geneid"] = e_hit["gene"]
-                        gene_info["type"] = e_hit["type_of_gene"]
-                    elif "protein" in e_hit['type_of_gene']:
+                        gene_info["geneid"] = g_id
+                        gene_info["type"] = g_type
+                    elif "protein" in g_type:
                         # prioritize protein coding and break out if we find one
-                        gene_info["geneid"] = e_hit["gene"]
-                        gene_info["type"] = e_hit["type_of_gene"]
+                        gene_info["geneid"] = g_id
+                        gene_info["type"] = g_type
 
             if len(gene_info) == 0:
                 # we didn't get any hits from our query
@@ -203,11 +222,15 @@ def import_predixcan(path, name, tissue, assay, session, bulk_amt=100):
 
     :return:  None
     """
+    log = logging.getLogger(pf.LOG)
+
     import re
     import numpy as np
-    import mygene
-
-    log = logging.getLogger(pf.LOG)
+    try:
+        import mygene
+    except ImportError:
+        log.error("Import submodule requires mygene and rpy2 to be installed.")
+        raise
 
     log.info("Starting import from PrediXcan database {}".format(path))
     pred_engine = create_engine("sqlite:///{}".format(path))
@@ -243,6 +266,8 @@ def import_predixcan(path, name, tissue, assay, session, bulk_amt=100):
         for hit in result['hits']:
             if hit["symbol"] != g_name and "alias" in hit and g_name not in hit["alias"]:
                 continue
+            if "genomic_pos_hg19" not in hit:
+                continue
 
             gpos = hit["genomic_pos_hg19"]
             if type(gpos) is dict:
@@ -258,6 +283,8 @@ def import_predixcan(path, name, tissue, assay, session, bulk_amt=100):
                 break
 
             if txstart is not None:
+                # we want to use standardized Ensembl identifiers; not GENCODE modified ones...
+                g_id = query_id
                 break
 
         gene_info = dict()

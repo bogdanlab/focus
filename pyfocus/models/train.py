@@ -23,12 +23,17 @@ def _lrt_pvalue(logl_H0, logl_H1, dof=1):
 
 
 def _fit_cis_herit(y, K_cis, X=None, compute_lrt=True):
-    from glimix_core.lmm import LMM
-    from numpy_sugar.linalg import economic_qs_linear
+    log = logging.getLogger(pyfocus.LOG)
+
+    try:
+        from glimix_core.lmm import LMM
+        from numpy_sugar.linalg import economic_qs_linear
+    except ImportError as ie:
+        log.error("Training submodule requires glimix-core>=2.0.0 and numpy-sugar to be installed.")
+        raise
+
     from scipy.stats import norm
     from scipy.linalg import lstsq
-
-    log = logging.getLogger(pyfocus.LOG)
 
     if X is None:
         X = np.ones((len(y), 1))
@@ -61,11 +66,15 @@ def _fit_cis_herit(y, K_cis, X=None, compute_lrt=True):
 
 
 def _train_lasso(y, Z, X, include_ses=False, p_threshold=0.01):
-    from limix.qc import normalise_covariance
-    from sklearn.linear_model import Lasso
+    log = logging.getLogger(pyfocus.LOG)
+    try:
+        from limix.qc import normalise_covariance
+        from sklearn.linear_model import Lasso
+    except ImportError as ie:
+        log.error("Training submodule requires limix>=2.0.0 and sklearn to be installed.")
+        raise
     from scipy.linalg import lstsq
 
-    log = logging.getLogger(pyfocus.LOG)
     log.debug("Initializing LASSO model")
 
     n = len(y)
@@ -123,11 +132,16 @@ def _train_lasso(y, Z, X, include_ses=False, p_threshold=0.01):
 
 
 def _train_gblup(y, Z, X, include_ses=False, p_threshold=0.01):
-    from limix.qc import normalise_covariance
+    log = logging.getLogger(pyfocus.LOG)
+
+    try:
+        from limix.qc import normalise_covariance
+    except ImportError as ie:
+        log.error("Training submodule requires limix>=2.0.0 and sklearn to be installed.")
+        raise
     from numpy.linalg import multi_dot as mdot
     from scipy.linalg import pinvh
 
-    log = logging.getLogger(pyfocus.LOG)
     log.debug("Initializing GBLUP model")
 
     attrs = dict()

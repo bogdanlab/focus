@@ -2,7 +2,6 @@ import logging
 
 import numpy as np
 import pandas as pd
-import pyfocus as pf
 import scipy.linalg as lin
 
 from itertools import chain, combinations

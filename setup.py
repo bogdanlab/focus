@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 st.setup(
     name="pyfocus",
-    version="0.3",
+    version="0.4",
     author="Nicholas Mancuso, Ruth Johnson",
     author_email="nick.mancuso@gmail.com, ruthjohnson@ucla.com",
     description="Fine-map transcriptome-wide association studies",
@@ -21,12 +21,8 @@ st.setup(
         "seaborn",
         "numpy",
         "scipy",
-        "numpy-sugar",
         "pandas>=0.23.0",
-        "pandas-plink",
-        "glimix-core>=2.0.0",
-        "limix>=2.0.0",
-        "scikit-learn"
+        "pandas-plink"
       ],
     scripts=[
         "bin/focus",
