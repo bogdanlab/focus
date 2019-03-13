@@ -12,8 +12,19 @@ __all__ = ["import_fusion", "import_predixcan"]
 
 
 def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
+    """
+    Import weights from a PrediXcan db into the FOCUS db.
+
+    :param path:  string path to the PrediXcan db
+    :param tissue: str name of the tissue
+    :param assay: technology assay to measure abundance
+    :param session: sqlalchemy.Session object for the FOCUS db
+    :param bulk_amt: int the number of objects to store until bulk commit
+
+    :return:  None
+    """
+    import re
     import os
-    import mygene
     import numpy as np
     import rpy2.robjects as robj
 
@@ -34,6 +45,11 @@ def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
     with open(path, "rt") as fusion_info:
         header = fusion_info.readline()
 
+        # batch here w/ this command...
+        # we could also pipeline this to a sep thread by batching in groups;
+        # it is IO-bound so it should speed things up drastically
+        #results = mg.querymany(G_NAMES, scopes='symbol', fields=['ensembl'], species="human")
+
         for line in fusion_info:
             wgt_name, g_name, chrom, txstart, txstop = line.split()
 
@@ -48,7 +64,8 @@ def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
 
             # this mygene API is so nice...
             # we should batch this or something at some point to speed things up...
-            result = mg.query(g_name, scopes='symbol', fields=['ensembl'], species="human")
+            result = mg.query(g_name, scopes='symbol', fields=['ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias'],
+                              species="human")
 
             gene_info = dict()
             for hit in result['hits']:
@@ -56,19 +73,29 @@ def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
                     # nothing in db
                     continue
 
+                if hit["symbol"] != g_name and "alias" in hit and g_name not in hit["alias"]:
+                    # not direct match
+                    continue
+
                 ens = hit["ensembl"]
+                pos = hit["genomic_pos"]
 
                 # sometimes we have multiple ENSG entries due to diff haplotypes.
                 # just reduce the single-case to the multi by a singleton list
                 if type(ens) is dict:
                     ens = [ens]
+                    pos = [pos]
 
-                for e_hit in ens:
+                for idx, e_hit in enumerate(ens):
+                    # skip non-primary assembles. they have weird CHR entries e.g., CHR_HSCHR1_1_CTG3
+                    if not re.match("[0-9]{1,2}|X|Y", pos[idx]["chr"], re.IGNORECASE):
+                        continue
+
                     if len(gene_info) == 0:
                         # grab any info if we haven't yet
                         gene_info["geneid"] = e_hit["gene"]
                         gene_info["type"] = e_hit["type_of_gene"]
-                    elif e_hit['type_of_gene'] == "protein_coding":
+                    elif "protein" in e_hit['type_of_gene']:
                         # prioritize protein coding and break out if we find one
                         gene_info["geneid"] = e_hit["gene"]
                         gene_info["type"] = e_hit["type_of_gene"]
@@ -76,6 +103,7 @@ def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
             if len(gene_info) == 0:
                 # we didn't get any hits from our query
                 # just use the gene-name as ens-id...
+                log.warning("Unable to match {} to Ensembl ID. Using symbol for ID".format(g_name))
                 gene_info["geneid"] = g_name
                 gene_info["type"] = None
 
@@ -169,9 +197,12 @@ def import_predixcan(path, name, tissue, assay, session, bulk_amt=100):
     :param tissue: str name of the tissue
     :param assay: technology assay to measure abundance
     :param session: sqlalchemy.Session object for the FOCUS db
+    :param bulk_amt: int the number of objects to store until bulk commit
 
     :return:  None
     """
+    import mygene
+
     log = logging.getLogger(pf.LOG)
 
     log.info("Starting import from PrediXcan database {}".format(path))
@@ -179,6 +210,8 @@ def import_predixcan(path, name, tissue, assay, session, bulk_amt=100):
 
     weights = pd.read_sql_table('weights', pred_engine)
     extra = pd.read_sql_table('extra', pred_engine)
+
+    #mg = mygene.MyGeneInfo()
 
     db_ref_panel = pf.RefPanel(ref_name=name, tissue=tissue, assay=assay)
     ses = None
@@ -191,8 +224,12 @@ def import_predixcan(path, name, tissue, assay, session, bulk_amt=100):
         chrom = gene.varID.values[0].split("_")[0]  # grab chromosome from varID
         pos = gene.varID.map(lambda x: int(x.split("_")[1])).values  # grab basepair pos
 
+        g_id = gene_extra.gene.values[0]
+
+        #result = mg.query(g_id, scopes='ensembl.gene', fields=["genomic_pos"], species="human")
+
         gene_info = dict()
-        gene_info["geneid"] = gene_extra.gene.values[0]
+        gene_info["geneid"] = g_id
         gene_info["txid"] = None
         gene_info["name"] = gene_extra.genename.values[0]
         gene_info["type"] = gene_extra.gene_type.values[0]
