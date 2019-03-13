@@ -25,6 +25,7 @@ def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
     """
     import re
     import os
+    import mygene
     import numpy as np
     import rpy2.robjects as robj
 
@@ -84,6 +85,7 @@ def import_fusion(path, name, tissue, assay, session, bulk_amt=100):
                 # just reduce the single-case to the multi by a singleton list
                 if type(ens) is dict:
                     ens = [ens]
+                if type(pos) is dict:
                     pos = [pos]
 
                 for idx, e_hit in enumerate(ens):
@@ -201,6 +203,8 @@ def import_predixcan(path, name, tissue, assay, session, bulk_amt=100):
 
     :return:  None
     """
+    import re
+    import numpy as np
     import mygene
 
     log = logging.getLogger(pf.LOG)
@@ -211,7 +215,9 @@ def import_predixcan(path, name, tissue, assay, session, bulk_amt=100):
     weights = pd.read_sql_table('weights', pred_engine)
     extra = pd.read_sql_table('extra', pred_engine)
 
-    #mg = mygene.MyGeneInfo()
+    mg = mygene.MyGeneInfo()
+
+    db_objs = []
 
     db_ref_panel = pf.RefPanel(ref_name=name, tissue=tissue, assay=assay)
     ses = None
@@ -225,17 +231,43 @@ def import_predixcan(path, name, tissue, assay, session, bulk_amt=100):
         pos = gene.varID.map(lambda x: int(x.split("_")[1])).values  # grab basepair pos
 
         g_id = gene_extra.gene.values[0]
+        g_name = gene_extra.genename.values[0]
+        p_idx = g_id.rfind(".")
+        if p_idx > -1:
+            query_id = g_id[:p_idx]
+        else:
+            query_id = g_id
 
-        #result = mg.query(g_id, scopes='ensembl.gene', fields=["genomic_pos"], species="human")
+        txstart = txstop = np.median(pos)
+        result = mg.query(query_id, scopes="ensembl.gene", fields=["genomic_pos_hg19,symbol,alias"], species="human")
+        for hit in result['hits']:
+            if hit["symbol"] != g_name and "alias" in hit and g_name not in hit["alias"]:
+                continue
+
+            gpos = hit["genomic_pos_hg19"]
+            if type(gpos) is dict:
+                gpos = [gpos]
+
+            for entry in gpos:
+                # skip non-primary assembles. they have weird CHR entries e.g., CHR_HSCHR1_1_CTG3
+                if not re.match("[0-9]{1,2}|X|Y", entry["chr"], re.IGNORECASE):
+                    continue
+
+                txstart = entry['start']
+                txstop = entry['end']
+                break
+
+            if txstart is not None:
+                break
 
         gene_info = dict()
         gene_info["geneid"] = g_id
         gene_info["txid"] = None
-        gene_info["name"] = gene_extra.genename.values[0]
+        gene_info["name"] = g_name
         gene_info["type"] = gene_extra.gene_type.values[0]
         gene_info["chrom"] = chrom
-        gene_info["txstart"] = None
-        gene_info["txstop"] = None
+        gene_info["txstart"] = txstart
+        gene_info["txstop"] = txstop
 
         snp_info = pd.DataFrame({"snp": gene.rsid.values,
                                 "chrom": [chrom] * len(gene),
