@@ -165,10 +165,11 @@ def get_cname_map(flag, default, ignore):
     are cleaned. But all equality is modulo clean_header().
 
     """
-    clean_ignore = [clean_header(x) for x in ignore]
+    clean_ignore = {clean_header(x) for x in ignore}
+    both = clean_ignore | set(flag)
     cname_map = {x: flag[x] for x in flag if x not in clean_ignore}
-    cname_map.update(
-        {x: default[x] for x in default if x not in clean_ignore + flag.keys()})
+    cname_map.update({x: default[x] for x in default if x not in both})
+
     return cname_map
 
 
@@ -421,6 +422,11 @@ def parse_flag_cnames(args):
 
 
 def munge(args):
+    # This is a modified munge_sumstat.py from LDSC project
+    # FIZI needed a similar tool but with a few extra output columns
+    # Credit to Brendan Bulik-Sullivan and Hilary Finucane
+
+    log = logging.getLogger(pyfocus.LOG)
 
     null_values = {
         'LOG_ODDS': 0,
@@ -433,11 +439,9 @@ def munge(args):
         # Chromosome
         'CHR': 'CHR',
         'CHROM': 'CHR',
-
         # BP
         'BP': 'BP',
         'POS': 'BP',
-
         # RS NUMBER
         'SNP': 'SNP',
         'MARKERNAME': 'SNP',
@@ -529,9 +533,7 @@ def munge(args):
         'NSTUDY': 'Number of studies in which the SNP was genotyped'
     }
 
-    log = logging.getLogger(pyfocus.LOG)
     try:
-
         file_cnames = read_header(args.sumstats)  # note keys not cleaned
         flag_cnames, signed_sumstat_null = parse_flag_cnames(args)
         if args.ignore:
@@ -546,10 +548,7 @@ def munge(args):
             mod_default_cnames = default_cnames
 
         cname_map = get_cname_map(flag_cnames, mod_default_cnames, ignore_cnames)
-
-        cname_translation = {x: cname_map[clean_header(x)] for x in file_cnames if
-                             clean_header(x) in cname_map}  # note keys not cleaned
-
+        cname_translation = {x: cname_map[clean_header(x)] for x in file_cnames if clean_header(x) in cname_map}
         cname_description = {x: describe_cname[cname_translation[x]] for x in cname_translation}
 
         if args.signed_sumstats is None and not args.a1_inc:
@@ -570,9 +569,9 @@ def munge(args):
 
         # check that we have all the columns we need
         if not args.a1_inc:
-            req_cols = ['SNP', 'P', 'SIGNED_SUMSTAT']
+            req_cols = ['CHR', 'BP', 'SNP', 'A1', 'A2', 'P', 'SIGNED_SUMSTAT']
         else:
-            req_cols = ['SNP', 'P']
+            req_cols = ['CHR', 'BP', 'SNP', 'A1', 'A2', 'P']
 
         for c in req_cols:
             if c not in cname_translation.values():
@@ -613,10 +612,12 @@ def munge(args):
         # figure out which columns are going to involve sign information, so we can ensure
         # they're read as floats
         signed_sumstat_cols = [k for k, v in cname_translation.items() if v == 'SIGNED_SUMSTAT']
+        dtypes = {c: np.float64 for c in signed_sumstat_cols}
+        dtypes['CHR'] = "category"
         dat_gen = pd.read_csv(args.sumstats, delim_whitespace=True, header=0,
                               compression=compression, usecols=cname_translation.keys(),
                               na_values=['.', 'NA'], iterator=True, chunksize=args.chunksize,
-                              dtype={c: np.float64 for c in signed_sumstat_cols})
+                              dtype=dtypes)
 
         dat = parse_dat(dat_gen, cname_translation, log, args)
         if len(dat) == 0:
@@ -643,10 +644,14 @@ def munge(args):
             dat.drop('SIGNED_SUMSTAT', inplace=True, axis=1)
 
         out_fname = args.output + '.sumstats.gz'
-        print_colnames = [
-            c for c in dat.columns if c in ['CHR', 'BP', 'SNP', 'N', 'Z', 'A1', 'A2']]
-        if args.keep_maf and 'FRQ' in dat.columns:
-            print_colnames.append('FRQ')
+        print_colnames = []
+        for c in ['CHR', 'SNP', 'BP', 'A1', 'A2', 'FRQ', 'Z', 'N']:
+            if c in dat.columns:
+                if c == 'FRQ' and not args.keep_maf:
+                    continue
+
+                print_colnames.append(c)
+
         msg = 'Writing summary statistics for {M} SNPs ({N} with nonmissing beta) to {F}.'
         log.info(
             msg.format(M=len(dat), F=out_fname, N=dat.N.notnull().sum()))
@@ -663,9 +668,8 @@ def munge(args):
 
         log.info('METADATA - Lambda GC = ' + str(round(CHISQ.median() / 0.4549, 3)))
         log.info('METADATA - Max chi^2 = ' + str(round(CHISQ.max(), 3)))
-        log.info(
-            'METADATA - {N} Genome-wide significant SNPs (some may have been removed by filtering)'.format(
-                N=(CHISQ > 29).sum()))
+        log.info('METADATA - {N} Genome-wide significant SNPs (some may have been removed by filtering)'.format(
+            N=(CHISQ > 29).sum()))
 
     except Exception as err:
         log.error(err)

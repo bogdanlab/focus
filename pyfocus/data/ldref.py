@@ -25,12 +25,12 @@ class IndBlocks(object):
         if regions is None:
             dtype_dict = {IndBlocks.CHRCOL: "category", IndBlocks.STARTCOL: int, IndBlocks.STOPCOL: int}
             local_ld_blocks = pkg_resources.resource_filename(__name__, 'ld_blocks/grch37.eur.loci.bed')
-            self._regions = pd.read_table(local_ld_blocks, delim_whitespace=True, dtype=dtype_dict)
+            self._regions = pd.read_csv(local_ld_blocks, delim_whitespace=True, dtype=dtype_dict)
         else:
             # type checking in python == dumb
             if type(regions) is str or pf.is_file(regions):
                 try:
-                    self._regions = pd.read_table(regions, delim_whitespace=True)
+                    self._regions = pd.read_csv(regions, delim_whitespace=True)
                 except Exception as e:
                     raise Exception("Parsing LD blocks failed:" + str(e))
 
