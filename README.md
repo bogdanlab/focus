@@ -6,7 +6,7 @@ This is an initial draft of the README and extensive documentation is coming soo
 
 Installing
 ----------
-We currently only support pip for installation:
+The easiest way to install is with pip:
 
     pip install pyfocus --user
     
@@ -22,7 +22,13 @@ by executing
     
 which can be saved in `~/.bashrc` or `~/.bash_profile`. To reload the environment type `source ~/.bashrc` or `~/source .bash_profile` depending where you entered it.
 
-*We currently only support Python3.6+. *A conda-forge recipe that should greatly simplify installation is currently underway.*
+Alternatively you can download the latest repo and then use setuptools:
+
+    git clone https://github.com/bogdanlab/focus.git
+    cd focus
+    python setup.py install
+
+*We currently only support Python3.6+. *A conda-forge recipe that should simplify installation is currently underway.*
 
 Example
 -------
@@ -36,7 +42,7 @@ Please see the [wiki](https://github.com/bogdanlab/focus/wiki) for more details 
 
 Notes
 -----
-TBD
+Version 0.3: Initial release. More to come soon.
 
 Software and support
 -----
