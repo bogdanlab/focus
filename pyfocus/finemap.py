@@ -11,13 +11,26 @@ import pyfocus as pf
 __all__ = ["fine_map"]
 
 
-def create_output(meta_data, attr, zscores, pips, null_res, region, credible_set=0.9):
+def add_credible_set(df, credible_set=0.9):
+    df = df.sort_values(by=["pip"], ascending=False)
+
+    # add credible set flag
+    psum = np.sum(df.pip.values)
+    npost = df.pip.values / psum
+    csum = np.cumsum(npost)
+    in_cred_set = csum <= credible_set
+    df["in_cred_set"] = in_cred_set.astype(int)
+
+    return df
+
+
+def create_output(meta_data, attr, zscores, pips, null_res, region):
 
     # merge attributes
     df = pd.merge(meta_data, attr, left_on="model_id", right_index=True)
     df["twas_z"] = zscores
     df["pip"] = pips
-    df["in_cred_set"] = [0] * len(pips)
+    df["in_cred_set"] = 0 
     df["region"] = region
 
     # sort by tx start site and we're good to go
@@ -44,13 +57,6 @@ def create_output(meta_data, attr, zscores, pips, null_res, region, credible_set
     null_dict["twas_z"] = 0
     null_dict["chrom"] = df["chrom"].values[0]
     df = df.append(null_dict, ignore_index=True)
-
-    # add credible set flag
-    psum = np.sum(df.pip.values)
-    npost = df.pip.values / psum
-    csum = np.cumsum(npost)
-    in_cred_set = (1 - csum) <= credible_set
-    df.in_cred_set = in_cred_set.astype(int)
 
     return df
 
@@ -355,15 +361,20 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
 
     # clean up and return results
     region = str(ref_geno).replace(" ", "")
-    df = create_output(meta_data, attr, zscores, pips, null_res, region, credible_set=credible_level)
+
+    # dont sort here to make plotting easier
+    df = create_output(meta_data, attr, zscores, pips, null_res, region)
 
     log.info("Completed fine-mapping at region {}".format(ref_geno))
     if plot:
         log.info("Creating FOCUS plots at region {}".format(ref_geno))
         plot_arr = pf.focus_plot(wcor, df)
 
-        df = df.sort_values(by=["pip"], ascending=False)
+        # sort here and create credible set
+        df = add_credible_set(df, credible_set=credible_level)
         return df, plot_arr
+
     else:
-        df = df.sort_values(by=["pip"], ascending=False)
+        # sort here and create credible set
+        df = add_credible_set(df, credible_set=credible_level)
         return df

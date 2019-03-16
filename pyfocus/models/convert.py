@@ -66,7 +66,7 @@ def import_fusion(path, name, tissue, assay, session):
     for result in results:
         res_map[result["query"]].append(result)
 
-    count = 500
+    count = 0
     log.info("Starting individual model conversion")
     for rdx, row in fusion_db.iterrows():
         wgt_name, g_name, chrom, txstart, txstop = row.WGT, row.ID, row.CHR, row.P0, row.P1
@@ -144,20 +144,36 @@ def import_fusion(path, name, tissue, assay, session):
         gene_info["txstop"] = txstop
 
         # get the multi-SNP method with the best cvR2
-        methods = list(robj.r['cv.performance'].colnames)
+        methods = np.array(robj.r['cv.performance'].colnames)
         types = list(robj.r['cv.performance'].rownames)
         if "rsq" not in types:
             raise ValueError("No R2 value for model {}".format(path))
         if "pval" not in types:
             raise ValueError("No R2 p-value for model {}".format(path))
 
+        # grab the actual weights
+        wgts = np.array(robj.r['wgt.matrix'])
+
+        # sometimes weights are constant or only contain NANs; drop them
+        keep = np.logical_not(np.isnan(np.std(wgts, axis=0)))
+        wgts = wgts.T[keep].T
+        methods = methods[keep]
+
         rsq_idx = types.index("rsq")
         pval_idx = types.index("pval")
-        values = np.array(robj.r['cv.performance'])
 
-        r2 = 0
+        values = np.array(robj.r['cv.performance'])
+        v_shape = values.shape
+
+        # is this always stored/retrieved as 2 x M ?
+        if v_shape[0] > v_shape[1]:
+            values = values.T
+
+        values = values.T[keep].T
+
         method = None
         r2idx = 0
+        r2 = -100  # FUSION reports the generalized R2 which can be negative
         for idx, value in enumerate(values[rsq_idx]):
             if methods[idx] == "top1":
                 continue
@@ -168,13 +184,12 @@ def import_fusion(path, name, tissue, assay, session):
                 r2idx = idx
                 pval = values[pval_idx, idx]
 
+        wgts = wgts.T[r2idx]
+
         # keep attributes
         attrs = dict()
         attrs["cv.R2"] = r2
         attrs["cv.R2.pval"] = pval
-
-        # grab the actual weights
-        wgts = np.array(robj.r['wgt.matrix']).T[r2idx]
 
         # SNPs data frame
         # V1 V2 V3 V4 V5 V6
