@@ -26,7 +26,9 @@ Alternatively you can download the latest repo and then use setuptools:
     cd focus
     python setup.py install
 
-*We currently only support Python3.6+. *A conda-forge recipe that should simplify installation is currently underway.*
+*We currently only support Python3.6+.*
+
+*A conda-forge recipe that should simplify installation is currently underway.*
 
 Example
 -------
