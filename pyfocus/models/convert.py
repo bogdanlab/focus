@@ -22,6 +22,8 @@ def import_fusion(path, name, tissue, assay, session):
 
     :return:  None
     """
+    log = logging.getLogger(pf.LOG)
+
     import re
     import os
     import warnings
@@ -38,10 +40,6 @@ def import_fusion(path, name, tissue, assay, session):
     except ImportError:
         log.error("Import submodule requires mygene and rpy2 to be installed.")
         raise
-
-
-
-    log = logging.getLogger(pf.LOG)
 
     log.info("Starting import from FUSION database {}".format(path))
     db_ref_panel = pf.RefPanel(ref_name=name, tissue=tissue, assay=assay)
@@ -235,6 +233,7 @@ def import_predixcan(path, name, tissue, assay, session):
     Import weights from a PrediXcan db into the FOCUS db.
 
     :param path:  string path to the PrediXcan db
+    :param name: str name of the reference panel
     :param tissue: str name of the tissue
     :param assay: technology assay to measure abundance
     :param session: sqlalchemy.Session object for the FOCUS db
@@ -252,7 +251,6 @@ def import_predixcan(path, name, tissue, assay, session):
     except ImportError:
         log.error("Import submodule requires mygene and rpy2 to be installed.")
         raise
-
 
     log.info("Starting import from PrediXcan database {}".format(path))
     pred_engine = create_engine("sqlite:///{}".format(path))
@@ -276,8 +274,6 @@ def import_predixcan(path, name, tissue, assay, session):
     res_map = defaultdict(list)
     for result in results:
         res_map[result["query"]].append(result)
-
-    db_objs = []
 
     db_ref_panel = pf.RefPanel(ref_name=name, tissue=tissue, assay=assay)
     ses = None

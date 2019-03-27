@@ -110,6 +110,10 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
         if len(m_merged) > 1 and np.isclose(np.var(m_merged["effect"]), 0):
             continue
 
+        # skip genes that do not have weights at referenced SNPs
+        if all(pd.isnull(m_merged["effect"])):
+            continue
+
         # keep model_id around to grab other attributes (pred-R2, etc) later on
         cur_idx = model.index[0]
         idxs.append(cur_idx)
@@ -138,7 +142,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     gwas = ref_snps[pf.GWAS.REQ_COLS]
 
     # need to replace NA with 0 due to jaggedness across genes
-    wmat = ref_snps.filter(like="model").values  #ref_snps.loc[:, final_df.columns != "SNP"].values
+    wmat = ref_snps.filter(like="model").values
     wmat[np.isnan(wmat)] = 0.0
 
     # Meta-data on the current model

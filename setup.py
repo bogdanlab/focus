@@ -5,16 +5,19 @@ with open("README.md", "r") as fh:
 
 st.setup(
     name="pyfocus",
-    version="0.4",
+    version="0.4.1",
     author="Nicholas Mancuso, Ruth Johnson",
-    author_email="nick.mancuso@gmail.com, ruthjohnson@ucla.com",
+    author_email="nicholas.mancuso@med.usc.com, ruthjohnson@ucla.com",
     description="Fine-map transcriptome-wide association studies",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/bogdanlab/focus",
-    packages=st.find_packages(),  #["pyfocus"],
+    packages=st.find_packages(),
     package_data={'pyfocus': ['data/ld_blocks/*.bed']},
     install_requires=[
+        # this is the minimum to perform fine-mapping given a prebuilt db.
+        # functions that require addtl modules will warn/raise error
+        # this is to minimize dependencies for the most-used scenario
         "opencv-python",
         "sqlalchemy",
         "matplotlib",

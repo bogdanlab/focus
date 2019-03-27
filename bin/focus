@@ -129,7 +129,7 @@ def get_command_string(args):
     needs_tab = True
     for cmd in rest:
         if "-" == cmd[0]:
-            if cmd in ["--quiet", "-q", "--verbose", "-v"]:
+            if cmd in ["--quiet", "-q", "--verbose", "-v", "--plot"]:
                 rest_strs.append("\t{}{}".format(cmd, os.linesep))
                 needs_tab = True
             else:
@@ -593,7 +593,7 @@ def munge(args):
 
         if (not args.N) and (not (args.N_cas and args.N_con)) and ('N' not in cname_translation.values()) and \
                 (any(x not in cname_translation.values() for x in ['N_CAS', 'N_CON'])):
-            raise ValueError('Could not determine N.')
+            raise ValueError('Could not determine N column.')
         if ('N' in cname_translation.values() or all(x in cname_translation.values() for x in ['N_CAS', 'N_CON'])) \
                 and 'NSTUDY' in cname_translation.values():
             nstudy = [
@@ -635,7 +635,8 @@ def munge(args):
             m = np.median(dat.SIGNED_SUMSTAT)
             if not pass_median_check(m, signed_sumstat_null, 0.1):
                 msg = 'Median value of {F} is {V} (should be close to {M}). This column may be mislabeled.'
-                raise ValueError(msg.format(F=sign_cname, M=signed_sumstat_null, V=round(m, 2)))
+                msg = msg.format(F=sign_cname, M=signed_sumstat_null, V=round(m, 2))
+                log.warning(msg)
             else:
                 msg = 'Median value of {F} was {C}, which seems sensible.'.format(C=m, F=sign_cname)
                 log.info(msg)
@@ -765,6 +766,11 @@ def run_twas(args):
                 local_gwas = gwas.subset_by_pos(chrom, start=start, stop=stop)
 
                 # only fine-map regions that contain GWAS signal
+                if len(local_gwas) == 0:
+                    warn_str = "No GWAS data found found at {}:{} - {}:{}. Skipping"
+                    log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
+                    continue
+
                 if min(local_gwas.P) >= args.p_threshold:
                     warn_str = "No GWAS SNPs with p-value < {:.2g} found at {}:{} - {}:{}. Skipping"
                     log.warning(warn_str.format(args.p_threshold, chrom, int(start), chrom, int(stop)))
