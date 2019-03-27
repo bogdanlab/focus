@@ -2,8 +2,6 @@ FOCUS
 =====
 FOCUS (Fine-mapping Of CaUsal gene Sets) is software to fine-map transcriptome-wide association study statistics at genomic risk regions. The software takes as input summary GWAS data along with eQTL weights and outputs a credible set of _genes_ to explain observed genomic risk.
 
-This is an initial draft of the README and extensive documentation is coming soon.
-
 Installing
 ----------
 The easiest way to install is with pip:
@@ -28,7 +26,9 @@ Alternatively you can download the latest repo and then use setuptools:
     cd focus
     python setup.py install
 
-*We currently only support Python3.6+. *A conda-forge recipe that should simplify installation is currently underway.*
+*We currently only support Python3.6+.*
+
+*A conda-forge recipe that should simplify installation is currently underway.*
 
 Example
 -------
@@ -38,7 +38,7 @@ Here is an example of how to perform LDL fine-mapping while prioritizing predict
     
 This command will scan `LDL_2010.clean.sumstats.gz` for risk regions and then perform TWAS+fine-mapping using LD estimated from plink-formatted `1000G.EUR.QC.1` and eQTL weights from `gtex_v7.db`. 
 
-Please see the [wiki](https://github.com/bogdanlab/focus/wiki) for more details on how to use focus.
+Please see the [wiki](https://github.com/bogdanlab/focus/wiki) for more details on how to use focus and links to database files.
 
 Notes
 -----
