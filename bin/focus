@@ -788,9 +788,9 @@ def run_twas(args):
                     warnings.simplefilter("ignore", category=sa_exc.SAWarning)
                     snp_weights = pd.read_sql(session.query(Weight, Model, MolecularFeature, RefPanel)
                                               .filter(Weight.snp.in_(local_gwas.SNP.values))
-                                              .join(Model)
-                                              .join(MolecularFeature)
-                                              .join(RefPanel)
+                                              .join(Model, Model.id == Weight.model_id)
+                                              .join(MolecularFeature, MolecularFeature.id == Model.mol_id)
+                                              .join(RefPanel, RefPanel.id == Model.ref_id)
                                               .statement, con=session.connection())
 
                 # if there are no SNPs found in this region or none of the SNPs overlap the GWAS skip it
