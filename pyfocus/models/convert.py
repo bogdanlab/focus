@@ -194,7 +194,7 @@ def import_fusion(path, name, tissue, assay, session):
         # 11 rs2729762 0 77033699 G A
         snps = robj.r['snps']
         snp_info = pd.DataFrame({"snp": list(snps[1]),
-                                 "chrom": list(snps[0]),
+                                 "chrom": [str(chrom) for chrom in snps[0]],
                                  "pos": list(snps[3]),
                                  "a1": list(snps[4]),
                                  "a0": list(snps[5])})
