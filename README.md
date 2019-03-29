@@ -4,7 +4,7 @@ FOCUS (Fine-mapping Of CaUsal gene Sets) is software to fine-map transcriptome-w
 
 This approach is described in,
 
-> [Probabilistic fine-mapping of transcriptome-wide association studies](https://www.nature.com/articles/s41588-019-0367-1). Nicholas Mancuso, Malika K. Freund, Ruth Johnson, Huwenbo Shi, Gleb Kichaeve, Alexander Gusev, and Bogdan Pasaniuc. Nature Genetics 51, 675-682 (2019).
+> [Probabilistic fine-mapping of transcriptome-wide association studies](https://www.nature.com/articles/s41588-019-0367-1). Nicholas Mancuso, Malika K. Freund, Ruth Johnson, Huwenbo Shi, Gleb Kichaev, Alexander Gusev, and Bogdan Pasaniuc. Nature Genetics 51, 675-682 (2019).
 
 Installing
 ----------
