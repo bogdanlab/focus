@@ -52,7 +52,7 @@ Version 0.3: Initial release. More to come soon.
 
 Software and support
 -----
-If you have any questions or comments please contact nmancuso@mednet.ucla.edu
+If you have any questions or comments please contact nicholas.mancuso@med.usc.edu
 
 For performing various inferences using summary data from large-scale GWASs please find the following useful software:
 
