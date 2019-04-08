@@ -786,12 +786,21 @@ def run_twas(args):
                 # grab local SNP weights
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", category=sa_exc.SAWarning)
-                    snp_weights = pd.read_sql(session.query(Weight, Model, MolecularFeature, RefPanel)
-                                              .filter(Weight.snp.in_(local_gwas.SNP.values))
-                                              .join(Model, Model.id == Weight.model_id)
-                                              .join(MolecularFeature, MolecularFeature.id == Model.mol_id)
-                                              .join(RefPanel, RefPanel.id == Model.ref_id)
-                                              .statement, con=session.connection())
+
+                    # sqlite has a limit of at most 999 parameters for queries
+                    # just split up the query into chunks and append at the end
+                    # its going to be slower, but not much we can do
+                    LIMIT = 999
+                    snp_weights = []
+                    for gwas_chunk in np.array_split(local_gwas, np.ceil(len(local_gwas) / LIMIT)):
+                        snp_weights.append(pd.read_sql(session.query(Weight, Model, MolecularFeature, RefPanel)
+                                                       .filter(Weight.snp.in_(gwas_chunk.SNP.values))
+                                                       .join(Model, Model.id == Weight.model_id)
+                                                       .join(MolecularFeature, MolecularFeature.id == Model.mol_id)
+                                                       .join(RefPanel, RefPanel.id == Model.ref_id)
+                                                       .statement, con=session.connection()))
+
+                    snp_weights = pd.concat(snp_weights, ignore_index=True)
 
                 # if there are no SNPs found in this region or none of the SNPs overlap the GWAS skip it
                 if len(snp_weights) == 0:
