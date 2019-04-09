@@ -12,6 +12,14 @@ __all__ = ["fine_map"]
 
 
 def add_credible_set(df, credible_set=0.9):
+    """
+    Compute the credible gene set and add it to the dataframe.
+
+    :param df: pandas.DataFrame containing TWAS summary results
+    :param credible_set: float sensitivity to compute the credble set
+
+    :return: pandas.DataFrame containing TWAS summary results augmented with `in_cred_set` flag
+    """
     df = df.sort_values(by=["pip"], ascending=False)
 
     # add credible set flag
@@ -25,6 +33,18 @@ def add_credible_set(df, credible_set=0.9):
 
 
 def create_output(meta_data, attr, zscores, pips, null_res, region):
+    """
+    Creates TWAS pandas.DataFrame output.
+
+    :param meta_data: pandas.DataFrame Metadata about the gene models
+    :param attr: pandas.DataFrame Prediction performance metadata about gene models
+    :param zscores: numpy.ndarray of TWAS zscores
+    :param pips: numpy.ndarray of posterior inclusion probabilities (PIPs)
+    :param null_res: float posterior probability of the null
+    :param region: str region identifier
+
+    :return: pandas.DataFrame TWAS summary results
+    """
 
     # merge attributes
     df = pd.merge(meta_data, attr, left_on="model_id", right_index=True)

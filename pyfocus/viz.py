@@ -70,7 +70,6 @@ def make_scatter(twas_df):
 
     plt.xticks(np.arange(1, n_rows + 1, 1.0))
     plt.xticks(x_values, labels=gene_names, rotation="vertical")
-    #plt.margins(0.2)
     plt.subplots_adjust(bottom=0.25)  # make room for xlabel
 
     plt.ylabel("$-\log_{10}(p)$", fontsize=18)
