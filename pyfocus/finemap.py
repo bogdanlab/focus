@@ -172,6 +172,11 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
                                 "tx_stop", "inference", "model_id"]
     ]
 
+    # re-rorder by tx_start
+    ranks = np.argsort(meta_data["tx_start"].values)
+    wmat = wmat.T[ranks].T
+    meta_data = meta_data.iloc[ranks]
+
     return gwas, wmat, meta_data, ldmat
 
 
