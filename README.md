@@ -46,6 +46,8 @@ Please see the [wiki](https://github.com/bogdanlab/focus/wiki) for more details 
 
 Notes
 -----
+Version 0.5: Plotting sorts genes based on tx start. Various bugfixes that limited the number of queried SNPs and plotting when using newer matplotlib.
+
 Version 0.4: Added FUSION import support.
 
 Version 0.3: Initial release. More to come soon.
