@@ -57,8 +57,15 @@ def import_fusion(path, name, tissue, assay, session):
 
     # we need to do batch queries in order to not get throttled by the mygene servers
     log.info("Querying mygene servers for gene annotations")
-    results = mg.querymany(genes, scopes='symbol', verbose=False,
+    
+    if genes[1][0:4]=='ENSG':
+        results = mg.querymany(genes, scopes='ensembl.gene', verbose=False,
                            fields=['ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias'], species="human")
+    else:
+        results = mg.querymany(genes, scopes='symbol', verbose=False,
+                           fields=['ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias'], species="human")
+
+
 
     res_map = defaultdict(list)
     for result in results:
