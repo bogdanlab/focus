@@ -8,7 +8,8 @@ __all__ = ["train_model", "METHODS"]
 
 LASSO = "LASSO"
 GBLUP = "GBLUP"
-METHODS = [LASSO, GBLUP]
+ENET = "ENET"
+METHODS = [LASSO, GBLUP, ENET]
 
 
 def _lrt_pvalue(logl_H0, logl_H1, dof=1):
@@ -131,6 +132,54 @@ def _train_lasso(y, Z, X, include_ses=False, p_threshold=0.01):
     return betas, ses, attrs
 
 
+def _train_enet(y, Z, X, include_ses=False, p_threshold=0.01):
+    log = logging.getLogger(pyfocus.LOG)
+    try:
+        from limix.qc import normalise_covariance
+        from sklearn.linear_model import ElasticNetCV
+    except ImportError as ie:
+        log.error("Training submodule requires limix>=2.0.0 and sklearn to be installed.")
+        raise
+    from scipy.linalg import lstsq
+
+    log.debug("Initializing ElasticNet model")
+
+    n = len(y)
+    attrs = dict()
+
+    K_cis = np.dot(Z, Z.T)
+    K_cis = normalise_covariance(K_cis)
+    fe_var, s2u, s2e, logl, fixed_betas, pval = _fit_cis_herit(y, K_cis, X)
+    if pval > p_threshold:
+        log.info("h2g pvalue {} greater than threshold {}. Skipping".format(pval, p_threshold))
+        return None
+
+    h2g = s2u / (s2u + s2e + fe_var)
+
+    attrs["h2g"] = h2g
+    attrs["h2g.logl"] = logl
+    attrs["h2g.pvalue"] = pval
+
+    # we only want to penalize SNP effects and not covariate effects...
+    fixed_betas, sum_resid, ranks, svals = lstsq(X, y)
+    yresid = y - np.dot(X, fixed_betas)
+
+    enet = ElasticNetCV(l1_ratio=0.5, fit_intercept=True, cv=5)
+    enet.fit(Z, yresid)
+    betas = enet.coef_
+
+    attrs["r2"] = enet.score(Z, yresid)
+    attrs["resid.var"] = sum((yresid - enet.predict(Z)) ** 2) / (n - 1)
+
+    if include_ses:
+        # TODO: bootstrap?
+        ses = None
+    else:
+        ses = None
+
+    return betas, ses, attrs
+
+
 def _train_gblup(y, Z, X, include_ses=False, p_threshold=0.01):
     log = logging.getLogger(pyfocus.LOG)
 
@@ -190,6 +239,8 @@ def train_model(y, X, G, method="GBLUP", include_ses=False, p_threshold=0.01):
         res = _train_lasso(y, G, X, include_ses, p_threshold)
     elif method == GBLUP:
         res = _train_gblup(y, G, X, include_ses, p_threshold)
+    elif method == ENET:
+        res = _train_enet(y, G, X, include_ses, p_threshold)
     else:
         raise ValueError("Unknown inference method {}".format(method))
 

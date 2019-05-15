@@ -11,13 +11,14 @@ __all__ = ["import_fusion", "import_predixcan"]
 # TODO: implement exporting to predixcan/fusion
 
 
-def import_fusion(path, name, tissue, assay, session):
+def import_fusion(path, name, tissue, assay, use_ens_id, session):
     """
     Import weights from a PrediXcan db into the FOCUS db.
 
     :param path:  string path to the PrediXcan db
     :param tissue: str name of the tissue
     :param assay: technology assay to measure abundance
+    :param use_ens_id: bool, query on ensembl ids instead of hgnc gene symbols
     :param session: sqlalchemy.Session object for the FOCUS db
 
     :return:  None
@@ -57,8 +58,12 @@ def import_fusion(path, name, tissue, assay, session):
 
     # we need to do batch queries in order to not get throttled by the mygene servers
     log.info("Querying mygene servers for gene annotations")
-    results = mg.querymany(genes, scopes='symbol', verbose=False,
-                           fields=['ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias'], species="human")
+    if use_ens_id:
+        results = mg.querymany(genes, scopes='ensembl.gene', verbose=False,
+                               fields=['ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias'], species="human")
+    else:
+        results = mg.querymany(genes, scopes='symbol', verbose=False,
+                               fields=['ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias'], species="human")
 
     res_map = defaultdict(list)
     for result in results:
@@ -90,7 +95,7 @@ def import_fusion(path, name, tissue, assay, session):
                 # nothing in db
                 continue
 
-            if hit["symbol"] != g_name and "alias" in hit and g_name not in hit["alias"]:
+            if not use_ens_id and hit["symbol"] != g_name and "alias" in hit and g_name not in hit["alias"]:
                 # not direct match
                 continue
 
@@ -99,6 +104,8 @@ def import_fusion(path, name, tissue, assay, session):
 
             ens = hit["ensembl"]
             pos = hit["genomic_pos"]
+            if use_ens_id and "symbol" in hit:
+                g_name = hit["symbol"]
 
             # sometimes we have multiple ENSG entries due to diff haplotypes.
             # just reduce the single-case to the multi by a singleton list
@@ -130,7 +137,10 @@ def import_fusion(path, name, tissue, assay, session):
         if len(gene_info) == 0:
             # we didn't get any hits from our query
             # just use the gene-name as ens-id...
-            log.warning("Unable to match {} to Ensembl ID. Using symbol for ID".format(g_name))
+            if use_ens_id:
+                log.warning("Unable to match {} to Ensembl ID. Using ID for symbol".format(g_name))
+            else:
+                log.warning("Unable to match {} to Ensembl ID. Using symbol for ID".format(g_name))
             gene_info["geneid"] = g_name
             gene_info["type"] = None
 
