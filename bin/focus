@@ -129,7 +129,7 @@ def get_command_string(args):
     needs_tab = True
     for cmd in rest:
         if "-" == cmd[0]:
-            if cmd in ["--quiet", "-q", "--verbose", "-v", "--plot"]:
+            if cmd in ["--quiet", "-q", "--verbose", "-v", "--plot", "--strict-tissue"]:
                 rest_strs.append("\t{}{}".format(cmd, os.linesep))
                 needs_tab = True
             else:
@@ -988,7 +988,7 @@ def import_weights(args):
         if args.type == "predixcan":
             pyfocus.import_predixcan(args.path, args.name, args.tissue, args.assay, session)
         else:
-            pyfocus.import_fusion(args.path, args.name, args.tissue, args.assay, session)
+            pyfocus.import_fusion(args.path, args.name, args.tissue, args.assay, args.use_ens_id, session)
 
     except Exception as err:
         log.error(err)
@@ -1190,6 +1190,9 @@ def build_import_weights_parser(subp):
                       help="Tissue type assayed for expression (e.g., liver). Case-invariant")
     impt.add_argument("--assay", choices=["", "rnaseq", "array"], default="", type=lambda s: s.lower(),
                       help="Technology used to measure expression levels (e.g., rnaseq). Case-invariant")
+
+    impt.add_argument("--use-ens-id", default=False, action="store_true",
+                      help="Query on ENSEMBL gene ID rather than HGNC gene symbol.")
 
     # misc options
     impt.add_argument("-q", "--quiet", default=False, action="store_true",

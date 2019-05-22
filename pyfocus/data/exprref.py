@@ -79,7 +79,6 @@ class ExprRef(object):
 
         return covar_mat
 
-
     def parse_gene_info(self, path):
         # TODO: validate meta-data. Must have columns we need for training
         self._gene_info = pd.read_table(path, delim_whitespace=True)

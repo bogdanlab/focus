@@ -102,12 +102,21 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
 
     ref_snps = merged_snps.loc[~pd.isna(merged_snps.i)]
 
+    # filter out mis-matched SNPs
+    matched = pf.check_valid_alleles(ref_snps[pf.GWAS.A1COL],
+                                     ref_snps[pf.GWAS.A2COL],
+                                     ref_snps[pf.LDRefPanel.A1COL],
+                                     ref_snps[pf.LDRefPanel.A2COL])
+    log.debug("Pruned {} SNPs due to invalid allele pairs between GWAS/RefPanel.".format(sum(np.logical_not(matched)),
+                                                                                         len(matched)))
+    ref_snps = ref_snps.loc[matched]
+
     # flip Zscores to match reference panel
     ref_snps[pf.GWAS.ZCOL] = pf.flip_alleles(ref_snps[pf.GWAS.ZCOL].values,
-                                            ref_snps[pf.GWAS.A1COL],
-                                            ref_snps[pf.GWAS.A2COL],
-                                            ref_snps[pf.LDRefPanel.A1COL],
-                                            ref_snps[pf.LDRefPanel.A2COL])
+                                             ref_snps[pf.GWAS.A1COL],
+                                             ref_snps[pf.GWAS.A2COL],
+                                             ref_snps[pf.LDRefPanel.A1COL],
+                                             ref_snps[pf.LDRefPanel.A2COL])
 
     # collapse the gene models into a single weight matrix
     idxs = []
