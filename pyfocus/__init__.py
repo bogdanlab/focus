@@ -5,7 +5,7 @@ from .io import *
 from .util import *
 from .viz import *
 
-__version__ = "0.6"
+__version__ = "0.6.5"
 
 VERSION = __version__
 LOG = "MAIN"
