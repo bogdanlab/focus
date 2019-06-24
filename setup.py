@@ -3,6 +3,7 @@ import setuptools as st
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
+
 st.setup(
     name="pyfocus",
     version="0.6.5",
