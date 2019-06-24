@@ -30,7 +30,8 @@ class IndBlocks(object):
             # type checking in python == dumb
             if type(regions) is str or pf.is_file(regions):
                 try:
-                    self._regions = pd.read_csv(regions, delim_whitespace=True)
+                    dtype_dict = {IndBlocks.CHRCOL: "category", IndBlocks.STARTCOL: int, IndBlocks.STOPCOL: int}
+                    self._regions = pd.read_csv(regions, delim_whitespace=True, dtype=dtype_dict)
                 except Exception as e:
                     raise Exception("Parsing LD blocks failed:" + str(e))
 
@@ -50,6 +51,8 @@ class IndBlocks(object):
             raise ValueError("chrom argument cannot be `None` in subset_by_pos")
 
         df = self._regions.loc[self._regions[IndBlocks.CHRCOL] == chrom]
+        if len(df) == 0:
+            raise ValueError("No independent blocks found on chromosome {}".format(chrom))
 
         if stop is None:
             stop = max(df[IndBlocks.STOPCOL])
@@ -58,6 +61,9 @@ class IndBlocks(object):
 
         # grab the intervals that overap the provided start and stop positions on same chromosome
         locs = df.loc[df.apply(lambda x: min(x[IndBlocks.STOPCOL], stop) - max(x[IndBlocks.STARTCOL], start), axis=1) > 0]
+
+        if len(locs) == 0:
+            raise ValueError("No independent blocks found at region {}{}-{}".format(chrom, start, stop))
 
         return IndBlocks(locs)
 
