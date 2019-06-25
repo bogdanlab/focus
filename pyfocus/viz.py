@@ -28,8 +28,8 @@ def make_scatter(twas_df):
 
     size_arr = []
     color_arr = []
-    custom_palette = ["#e4f1fe", "#89c4f4", "#2574a9", "#013243"]
-    size_palette = [4, 8, 10, 12]
+    custom_palette = ["#e4f1fe", "#bdd7e7", "#6baed6", "#3182bd", "#08519c"]
+    size_palette = [2, 4, 8, 10, 12]
 
     for i, row in twas_df.iterrows():
         pip = row["pip"]
@@ -46,8 +46,8 @@ def make_scatter(twas_df):
             color_arr.append(custom_palette[3])
             size_arr.append(size_palette[3])
         else:
-            color_arr.append(custom_palette[3])
-            size_arr.append(size_palette[3])
+            color_arr.append(custom_palette[4])
+            size_arr.append(size_palette[4])
 
     n_rows = len(twas_df.index)
     x_values = np.arange(1, n_rows + 1)
@@ -61,8 +61,10 @@ def make_scatter(twas_df):
                markerfacecolor=custom_palette[1], markersize=size_palette[1], markeredgecolor="k"),
         Line2D([2], [2], marker="o", color="w", label="[0.4, 0.6)",
                markerfacecolor=custom_palette[2], markersize=size_palette[2], markeredgecolor="k"),
-        Line2D([3], [3], marker="o", color="w", label="[0.8, 1.0]",
-               markerfacecolor=custom_palette[3], markersize=size_palette[3], markeredgecolor="k")]
+        Line2D([3], [3], marker="o", color="w", label="[0.6, 0.8)",
+               markerfacecolor=custom_palette[3], markersize=size_palette[3], markeredgecolor="k"),
+        Line2D([4], [4], marker="o", color="w", label="[0.8, 1.0]",
+               markerfacecolor=custom_palette[4], markersize=size_palette[4], markeredgecolor="k")]
     plt.legend(handles=legend_elements, loc="best", title="PIP")
 
     n_rows = len(twas_df.index)
@@ -136,7 +138,8 @@ def heatmap_colorbar():
     fig = plt.figure(figsize=(3.0, 1.0))
     ax1 = fig.add_axes([0.05, 0.80, 0.9, 0.15])
     norm = mpl.colors.Normalize(vmin=-1, vmax=1)
-    mpl.colorbar.ColorbarBase(ax1, cmap="RdBu_r", norm=norm, orientation="horizontal", ticks=[-1, -.50, 0, .50, 1])
+    cmap = mpl.cm.get_cmap("RdBu_r")
+    mpl.colorbar.ColorbarBase(ax1, cmap=cmap, norm=norm, orientation="horizontal", ticks=[-1, -.50, 0, .50, 1])
 
     # convert to numpy array format
     fig.canvas.draw()
