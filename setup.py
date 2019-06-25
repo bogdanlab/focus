@@ -21,7 +21,7 @@ st.setup(
         # this is to minimize dependencies for the most-used scenario
         "opencv-python",
         "sqlalchemy",
-        "matplotlib>=3.0.0",
+        "matplotlib>=3.1.0",
         "seaborn",
         "numpy",
         "scipy",
