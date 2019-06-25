@@ -46,6 +46,8 @@ Please see the [wiki](https://github.com/bogdanlab/focus/wiki) for more details 
 
 Notes
 -----
+Version 0.6.5: Fixed bug in newer versions of matplotlib not accepting string for colormaps. Fixed legend bug in plot. Fixed bug that mismatched string and category when supplying custom locations.
+
 Version 0.6: Fixed bug where only one of the two alleles was reversed complemented breaking alignment. For now these instances are dropped. Added option `--use-ens-id` for FUSION import to indicate the main model label is an Ensembl ID rather than HGNC symbol.
 
 Version 0.5: Plotting sorts genes based on tx start. Various bugfixes that limited the number of queried SNPs and plotting when using newer matplotlib.
