@@ -809,7 +809,7 @@ def run_twas(args):
                     continue
 
                 if args.tissue is not None:
-                    info_str = "Prioritzing genes by {} tissue then on predictive performance at region {}"
+                    info_str = "Prioritizing genes by {} tissue then on predictive performance at region {}"
                     log.info(info_str.format(args.tissue, local_ref))
                     snp_weights = get_tissue_prioritized_genes(snp_weights, args.tissue, session,
                                                                metric="cv.R2", strict=args.strict_tissue)
