@@ -107,8 +107,10 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
                                      ref_snps[pf.GWAS.A2COL],
                                      ref_snps[pf.LDRefPanel.A1COL],
                                      ref_snps[pf.LDRefPanel.A2COL])
-    log.debug("Pruned {} SNPs due to invalid allele pairs between GWAS/RefPanel.".format(sum(np.logical_not(matched)),
-                                                                                         len(matched)))
+    n_miss = sum(np.logical_not(matched))
+    if n_miss > 0:
+        log.debug("Pruned {} SNPs due to invalid allele pairs between GWAS/RefPanel.".format(n_miss))
+
     ref_snps = ref_snps.loc[matched]
 
     # flip Zscores to match reference panel
@@ -128,6 +130,17 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
         # effect_allele alt_allele effect
         m_merged = pd.merge(ref_snps, model, how="inner", left_on=pf.GWAS.SNPCOL, right_on="snp")
 
+        m_matched = pf.check_valid_alleles(m_merged["effect_allele"],
+                                           m_merged["alt_allele"],
+                                           m_merged[pf.LDRefPanel.A1COL],
+                                           m_merged[pf.LDRefPanel.A2COL])
+
+        n_miss = sum(np.logical_not(m_matched))
+        if n_miss > 0:
+            log.debug("Gene {} pruned {} SNPs due to invalid allele pairs between weight-db/GWAS.".format(eid, n_miss))
+
+        m_merged = m_merged.loc[m_matched]
+
         # make sure effects are for same ref allele as GWAS + reference panel
         m_merged["effect"] = pf.flip_alleles(m_merged["effect"].values,
                                              m_merged["effect_allele"],
@@ -136,11 +149,13 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
                                              m_merged[pf.LDRefPanel.A2COL])
 
         # skip genes whose overlapping weights are all 0s
-        if len(m_merged) > 1 and np.isclose(np.var(m_merged["effect"]), 0):
+        if len(m_merged) > 1 and all(np.isclose(m_merged["effect"], 0)):
+            log.debug("Gene {} has only zero-weights. This will break variance estimate. Skipping.".format(eid))
             continue
 
         # skip genes that do not have weights at referenced SNPs
         if all(pd.isnull(m_merged["effect"])):
+            log.debug("Gene {} has no overlapping weights. Skipping.".format(eid))
             continue
 
         # keep model_id around to grab other attributes (pred-R2, etc) later on
