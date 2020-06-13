@@ -60,10 +60,12 @@ def import_fusion(path, name, tissue, assay, use_ens_id, session):
     log.info("Querying mygene servers for gene annotations")
     if use_ens_id:
         results = mg.querymany(genes, scopes='ensembl.gene', verbose=False,
-                               fields=['ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias'], species="human")
+                               fields='ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias', species="human")
     else:
-        results = mg.querymany(genes, scopes='symbol', verbose=False,
-                               fields=['ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias'], species="human")
+        # a lot of older gene expression datasets have outdated symbols. include
+        # alias here to help match them up with ens-id
+        results = mg.querymany(genes, scopes='symbol,alias', verbose=False,
+                               fields='ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias', species="human")
 
     res_map = defaultdict(list)
     for result in results:
@@ -238,7 +240,7 @@ def export_fusion(path, session):
     return
 
 
-def import_predixcan(path, name, tissue, assay, session):
+def import_predixcan(path, name, tissue, assay, method, session):
     """
     Import weights from a PrediXcan db into the FOCUS db.
 
@@ -246,6 +248,7 @@ def import_predixcan(path, name, tissue, assay, session):
     :param name: str name of the reference panel
     :param tissue: str name of the tissue
     :param assay: technology assay to measure abundance
+    :param method: the prediction model used to fit the data
     :param session: sqlalchemy.Session object for the FOCUS db
 
     :return:  None
@@ -253,6 +256,7 @@ def import_predixcan(path, name, tissue, assay, session):
     log = logging.getLogger(pf.LOG)
 
     import re
+    import os
     import numpy as np
 
     from collections import defaultdict
@@ -262,6 +266,8 @@ def import_predixcan(path, name, tissue, assay, session):
         log.error("Import submodule requires mygene and rpy2 to be installed.")
         raise
 
+    if not os.path.isfile(path):
+        raise ValueError("Cannot find database {}".format(path))
     log.info("Starting import from PrediXcan database {}".format(path))
     pred_engine = create_engine("sqlite:///{}".format(path))
 
@@ -279,7 +285,7 @@ def import_predixcan(path, name, tissue, assay, session):
     log.info("Querying mygene servers for gene annotations")
     mg = mygene.MyGeneInfo()
     results = mg.querymany(genes, scopes='ensembl.gene', verbose=False,
-                           fields=["genomic_pos_hg19,symbol,alias"], species="human")
+                           fields="genomic_pos_hg19,symbol,alias", species="human")
 
     res_map = defaultdict(list)
     for result in results:
@@ -287,7 +293,6 @@ def import_predixcan(path, name, tissue, assay, session):
 
     db_ref_panel = pf.RefPanel(ref_name=name, tissue=tissue, assay=assay)
     ses = None
-    method = "ElasticNet"
 
     count = 0
     log.info("Starting individual model conversion")
@@ -349,8 +354,14 @@ def import_predixcan(path, name, tissue, assay, session):
         wgts = gene.weight.values
 
         attrs = dict()
-        attrs["cv.R2"] = gene_extra["cv_R2_avg"].values[0]
-        attrs["cv.R2.pval"] = gene_extra["nested_cv_fisher_pval"].values[0]
+        # predixcan enet uses cv_R2_avg and nested_cv_fisher_pval
+        # mashr uses pred.perf.R2 and pred.perf.pval
+        if "cv_R2_avg" in gene_extra:
+            attrs["cv.R2"] = gene_extra["cv_R2_avg"].values[0]
+            attrs["cv.R2.pval"] = gene_extra["nested_cv_fisher_pval"].values[0]
+        elif "pred.perf.R2" in gene_extra:
+            attrs["cv.R2"] = gene_extra["pred.perf.R2"].values[0]
+            attrs["cv.R2.pval"] = gene_extra["pred.perf.pval"].values[0]
 
         # build model
         model = pf.build_model(gene_info, snp_info, db_ref_panel, wgts, ses, attrs, method)
