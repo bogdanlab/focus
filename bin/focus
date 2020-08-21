@@ -986,7 +986,7 @@ def import_weights(args):
         session = pyfocus.load_db("{}.db".format(args.output))
 
         if args.type == "predixcan":
-            pyfocus.import_predixcan(args.path, args.name, args.tissue, args.assay, session)
+            pyfocus.import_predixcan(args.path, args.name, args.tissue, args.assay, args.predixcan_method, session)
         else:
             pyfocus.import_fusion(args.path, args.name, args.tissue, args.assay, args.use_ens_id, args.from_gencode, session)
 
@@ -1196,6 +1196,9 @@ def build_import_weights_parser(subp):
     impt.add_argument("--from-gencode", default=False, action="store_true",
                       help="Query on GENCODE gene ID rather than HGNC gene symbol. Must be used with --use-ens-id.")
 
+    impt.add_argument("--predixcan-method", default="ElasticNet", 
+                      help="Name of the prediction method (e.g., ElasticNet) used to fit weights.")
+
     # misc options
     impt.add_argument("-q", "--quiet", default=False, action="store_true",
                       help="Do not print anything to stdout.")
@@ -1212,7 +1215,7 @@ def main(argsv):
     argp = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     subp = argp.add_subparsers(
         help="Subcommands: munge to clean up summary statistics. finemap to perform run twas & finemap."
-             " train to train models and build a database. import to import weights from existing databases.")
+             " import to import weights from existing databases.")
 
     # add subparsers for focus commands
     munp = build_munge_parser(subp)
@@ -1221,8 +1224,11 @@ def main(argsv):
     fmp = build_focus_parser(subp)
     fmp.set_defaults(func=run_twas)
 
-    wgtp = build_weights_parser(subp)
-    wgtp.set_defaults(func=build_weights)
+    # weight fitting within FOCUS is broken and not worth implementing
+    # it is -much- easier to just us FUSION or PrediXcan to fit weights
+    # and then import them here...
+    #wgtp = build_weights_parser(subp)
+    #wgtp.set_defaults(func=build_weights)
 
     imtp = build_import_weights_parser(subp)
     imtp.set_defaults(func=import_weights)
@@ -1239,7 +1245,7 @@ def main(argsv):
     cmd_str = get_command_string(argsv)
 
     masthead =  "===================================" + os.linesep
-    masthead += "              FOCUS v{}            ".format(pyfocus.VERSION) + os.linesep
+    masthead += "             FOCUS v{}             ".format(pyfocus.VERSION) + os.linesep
     masthead += "===================================" + os.linesep
 
     # setup logging
