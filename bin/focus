@@ -129,7 +129,7 @@ def get_command_string(args):
     needs_tab = True
     for cmd in rest:
         if "-" == cmd[0]:
-            if cmd in ["--quiet", "-q", "--verbose", "-v", "--plot", "--strict-tissue"]:
+            if cmd in ["--quiet", "-q", "--verbose", "-v", "--plot", "--strict-tissue", "--use-ens-id", "--from-gencode"]:
                 rest_strs.append("\t{}{}".format(cmd, os.linesep))
                 needs_tab = True
             else:
@@ -988,7 +988,7 @@ def import_weights(args):
         if args.type == "predixcan":
             pyfocus.import_predixcan(args.path, args.name, args.tissue, args.assay, session)
         else:
-            pyfocus.import_fusion(args.path, args.name, args.tissue, args.assay, args.use_ens_id, session)
+            pyfocus.import_fusion(args.path, args.name, args.tissue, args.assay, args.use_ens_id, args.from_gencode, session)
 
     except Exception as err:
         log.error(err)
@@ -1193,6 +1193,8 @@ def build_import_weights_parser(subp):
 
     impt.add_argument("--use-ens-id", default=False, action="store_true",
                       help="Query on ENSEMBL gene ID rather than HGNC gene symbol.")
+    impt.add_argument("--from-gencode", default=False, action="store_true",
+                      help="Query on GENCODE gene ID rather than HGNC gene symbol. Must be used with --use-ens-id.")
 
     # misc options
     impt.add_argument("-q", "--quiet", default=False, action="store_true",

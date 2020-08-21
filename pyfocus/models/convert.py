@@ -10,8 +10,9 @@ __all__ = ["import_fusion", "import_predixcan"]
 
 # TODO: implement exporting to predixcan/fusion
 
+COUNT = 250
 
-def import_fusion(path, name, tissue, assay, use_ens_id, session):
+def import_fusion(path, name, tissue, assay, use_ens_id, from_gencode, session):
     """
     Import weights from a PrediXcan db into the FOCUS db.
 
@@ -19,6 +20,7 @@ def import_fusion(path, name, tissue, assay, use_ens_id, session):
     :param tissue: str name of the tissue
     :param assay: technology assay to measure abundance
     :param use_ens_id: bool, query on ensembl ids instead of hgnc gene symbols
+    :param from_gencode: bool, convert gencode_ids to ens_ids. Only works with use_ens_id == True
     :param session: sqlalchemy.Session object for the FOCUS db
 
     :return:  None
@@ -54,13 +56,17 @@ def import_fusion(path, name, tissue, assay, use_ens_id, session):
 
     # WGT ID CHR P0 P1
     fusion_db = pd.read_csv(path, delim_whitespace=True)
-    genes = fusion_db.ID.values
+    if use_ens_id and from_gencode:
+        # likely importing from GTEx. Pull underlying ensemble id from gencode id
+        genes = fusion_db.ID.apply(lambda x: re.sub("(.*)\.\\d+", "\\1", x))
+    else:
+        genes = fusion_db.ID.values
 
     # we need to do batch queries in order to not get throttled by the mygene servers
     log.info("Querying mygene servers for gene annotations")
     if use_ens_id:
-        results = mg.querymany(genes, scopes='ensembl.gene', verbose=False,
-                               fields=['ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias'], species="human")
+        results = mg.getgenes(genes, species="human",
+                               fields=['ensembl.gene','genomic_pos','symbol','ensembl.type_of_gene','alias']) 
     else:
         results = mg.querymany(genes, scopes='symbol', verbose=False,
                                fields=['ensembl.gene,genomic_pos,symbol,ensembl.type_of_gene,alias'], species="human")
@@ -86,8 +92,13 @@ def import_fusion(path, name, tissue, assay, use_ens_id, session):
 
         gene_info = dict()
         id_dict = dict()
+        if use_ens_id and from_gencode:
+            lookup_g_name = re.sub("(.*)\.\\d+", "\\1", g_name)
+        else:
+            lookup_g_name = g_name
+
         # hits are ordered by match quality.
-        for hit in res_map[g_name]:
+        for hit in res_map[lookup_g_name]:
             if "notfound" in hit:
                 continue
 
@@ -181,9 +192,12 @@ def import_fusion(path, name, tissue, assay, use_ens_id, session):
 
         method = None
         r2idx = 0
+        top1_idx = -1
+        pval = 1
         r2 = -100  # FUSION reports the generalized R2 which can be negative
         for idx, value in enumerate(values[rsq_idx]):
             if methods[idx] == "top1":
+                top1_idx = idx
                 continue
 
             if value > r2:
@@ -191,6 +205,13 @@ def import_fusion(path, name, tissue, assay, use_ens_id, session):
                 method = methods[idx]
                 r2idx = idx
                 pval = values[pval_idx, idx]
+
+        if method is None:
+            log.warning("Only predicting model is top1 eQTL.")
+            r2 = values[rsq_idx][top1_idx]
+            method = "top1"
+            r2idx = top1_idx
+            pval = values[pval_idx, idx]
 
         wgts = wgts.T[r2idx]
 
@@ -222,11 +243,11 @@ def import_fusion(path, name, tissue, assay, use_ens_id, session):
             session.rollback()
             raise Exception("Failed committing to db")
         count += 1
-        if count % 500 == 0:
-            log.info("Committed 500 models to db")
+        if count % COUNT == 0:
+            log.info("Committed {} models to db".format(COUNT))
 
-    if count % 500 != 0:
-        log.info("Committed {} models to db".format(count % 500))
+    if count % COUNT != 0:
+        log.info("Committed {} models to db".format(count % COUNT))
 
     log.info("Finished import from FUSION database {}".format(path))
     return
@@ -362,11 +383,11 @@ def import_predixcan(path, name, tissue, assay, session):
             raise Exception("Failed committing to db")
 
         count += 1
-        if count % 500 == 0:
-            log.info("Committed 500 models to db")
+        if count % COUNT == 0:
+            log.info("Committed {} models to db".format(COUNT))
 
-    if count % 500 != 0:
-        log.info("Committed {} models to db".format(count % 500))
+    if count % COUNT != 0:
+        log.info("Committed {} models to db".format(count % COUNT))
 
 
     log.info("Finished import from PrediXcan database {}".format(path))

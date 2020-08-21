@@ -24,10 +24,14 @@ def add_credible_set(df, credible_set=0.9):
 
     # add credible set flag
     psum = np.sum(df.pip.values)
-    npost = df.pip.values / psum
-    csum = np.cumsum(npost)
-    in_cred_set = csum <= credible_set
-    df["in_cred_set"] = in_cred_set.astype(int)
+    csum = np.cumsum(df.pip.values / psum)
+    in_cred_set = np.zeros(len(csum), dtype=int)
+    for idx, npip in enumerate(csum):
+        in_cred_set[idx] = True
+        if npip >= credible_set:
+            break
+
+    df["in_cred_set"] = in_cred_set
 
     return df
 
