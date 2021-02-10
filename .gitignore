@@ -9,6 +9,8 @@ test_focus
 *.tsv
 *.db
 *.sumstats
+# some temp editing files
+._*
 
 .idea/
 

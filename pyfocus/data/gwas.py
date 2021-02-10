@@ -74,3 +74,26 @@ class GWAS(pd.DataFrame):
             df[GWAS.PCOL] = stats.chi2.sf(df[GWAS.ZCOL].values ** 2, 1)
 
         return cls(df)
+
+    def parse_me_gwas(cls, stream):
+        dtype_dict = {'CHR': "category", 'SNP': str, 'Z': float, 'N': float, 'A1': str, 'A2': str}
+
+        df_paths = stream.split(";")
+        dfs = []
+        for i in range(len(df_paths)):
+            try:
+                temp_df = pd.read_csv(df_paths[i], dtype=dtype_dict, delim_whitespace=True, compression='infer')
+                dfs.append(temp_df)
+            except Exception as e:
+                raise Exception("Parsing GWAS failed for population " + i + ". " + str(e))
+
+        for i in range(len(dfs)):
+            for column in GWAS.REQ_COLS:
+                if column not in dfs[i]:
+                    raise ValueError("{}-column not found in summary statistics".format(column) + "for population {}.".format(i))
+
+        for df in dfs:
+            if GWAS.PCOL not in df:
+                df[GWAS.PCOL] = stats.chi2.sf(df[GWAS.ZCOL].values ** 2, 1)
+
+        return cls(dfs)

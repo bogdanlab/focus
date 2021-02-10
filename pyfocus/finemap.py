@@ -54,7 +54,7 @@ def create_output(meta_data, attr, zscores, pips, null_res, region):
     df = pd.merge(meta_data, attr, left_on="model_id", right_index=True)
     df["twas_z"] = zscores
     df["pip"] = pips
-    df["in_cred_set"] = 0 
+    df["in_cred_set"] = 0
     df["region"] = region
 
     # sort by tx start site and we're good to go
