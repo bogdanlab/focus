@@ -47,6 +47,7 @@ class GWAS(pd.DataFrame):
         return pyfocus.GWASSeries
 
     def subset_by_pos(self, chrom, start=None, stop=None):
+
         if start is not None and stop is not None:
             snps = self.loc[(self[GWAS.CHRCOL] == chrom) & (self[GWAS.BPCOL] >= start) & (self[GWAS.BPCOL] <= stop)]
         elif start is not None and stop is None:
@@ -58,42 +59,20 @@ class GWAS(pd.DataFrame):
 
         return GWAS(snps)
 
+
     @classmethod
-    def parse_gwas(cls, stream):
+    def parse_gwas(cls, stream, idx = "1"):
         dtype_dict = {'CHR': "category", 'SNP': str, 'Z': float, 'N': float, 'A1': str, 'A2': str}
         try:
             df = pd.read_csv(stream, dtype=dtype_dict, delim_whitespace=True, compression='infer')
         except Exception as e:
-            raise Exception("Parsing GWAS failed. " + str(e))
+            raise Exception("Parsing GWAS failed for population " + idx, ". " + str(e))
 
         for column in GWAS.REQ_COLS:
             if column not in df:
-                raise ValueError("{}-column not found in summary statistics".format(column))
+                raise ValueError("{}-column not found in summary statistics".format(column) + " for population " + idx)
 
         if GWAS.PCOL not in df:
             df[GWAS.PCOL] = stats.chi2.sf(df[GWAS.ZCOL].values ** 2, 1)
 
         return cls(df)
-
-    def parse_me_gwas(cls, stream):
-        dtype_dict = {'CHR': "category", 'SNP': str, 'Z': float, 'N': float, 'A1': str, 'A2': str}
-
-        df_paths = stream.split(";")
-        dfs = []
-        for i in range(len(df_paths)):
-            try:
-                temp_df = pd.read_csv(df_paths[i], dtype=dtype_dict, delim_whitespace=True, compression='infer')
-                dfs.append(temp_df)
-            except Exception as e:
-                raise Exception("Parsing GWAS failed for population " + i + ". " + str(e))
-
-        for i in range(len(dfs)):
-            for column in GWAS.REQ_COLS:
-                if column not in dfs[i]:
-                    raise ValueError("{}-column not found in summary statistics".format(column) + "for population {}.".format(i))
-
-        for df in dfs:
-            if GWAS.PCOL not in df:
-                df[GWAS.PCOL] = stats.chi2.sf(df[GWAS.ZCOL].values ** 2, 1)
-
-        return cls(dfs)

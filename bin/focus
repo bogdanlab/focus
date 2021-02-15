@@ -869,31 +869,63 @@ def run_me_twas(args):
                 if start_bp >= stop_bp:
                     raise ValueError("Specified --start position must be before --stop position")
 
-        # load GWAS summary data
+        # load GWAS summary data for each population
         log.info("Preparing GWAS summary file for different populations")
-        gwas = pyfocus.GWAS.parse_me_gwas(args.gwas)
+
+        df_paths = args.gwas.split(";")
+        total_pop = len(df_paths)
+        for i in range(total_pop):
+            log.info("Preparing GWAS summary file for population " + str(i + 1))
+            gwas_tmp = pyfocus.GWAS.parse_gwas(df_paths[i], idx = str(i + 1))
+            exec("%s = %d" % ("gwas" + str(i + 1), gwas_tmp))
 
         # if chrom is supplied just filter here
-        if chrom is not None:
-            gwas = gwas.subset_by_pos(chrom)
-            if len(gwas) == 0:
-                err_str = "No GWAS SNPs found at chromosome {}"
-                err_str = err_str.format(chrom)
-                raise Exception(err_str)
+        for i in range(total_pop):
+            if chrom is not None:
+                gwas_tmp = eval("gwas" + str(i + 1)).subset_by_pos(chrom)
+                exec("%s = %d" % ("gwas" + str(i + 1), gwas_tmp))
 
-        # load reference genotype data
+                if len(gwas_tmp) == 0:
+                    err_str = "No GWAS SNPs found at chromosome {} \
+                    for population " + str(i + 1)
+                    err_str = err_str.format(chrom)
+                    raise Exception(err_str)
+
+        # load reference genotype data for each population
         log.info("Preparing reference SNP data")
-        ref = pyfocus.LDRefPanel.parse_plink(args.ref)
+        df_refs = args.ref.split(";")
+
+        if len(df_refs) != len(df_paths):
+            if len(df_refs) != 1:
+                raise Exception("The number of LD refernece panel is different \
+                from the number of GWAS data, and the number of LD reference \
+                panel is greater than 1. Please match the number and concatenate \
+                paths by semicolon")
+            else:
+                log.info("Only have one LD reference panel. All populations \
+                are using this one.")
+        else:
+            log.info("The number of LD reference panel is equal to the number \
+            of GWAS data")
+
+        for i in range(len(df_refs)):
+            log.info("Preparing reference SNP data for population " + str(i + 1))
+            ref_tmp = pyfocus.LDRefPanel.parse_plink(df_refs[i])
+            exec("%s = %d" % ("ref" + str(i + 1), ref_tmp))
 
         # if chrom is supplied just filter here
-        if chrom is not None:
-            ref = ref.subset_by_pos(chrom)
-            if len(ref) == 0:
-                err_str = "No reference LD SNPs found at chromosome {}"
-                err_str = err_str.format(chrom)
-                raise Exception(err_str)
+        for i in range(len(df_refs)):
+            if chrom is not None:
+                ref_tmp = eval("ref" + str(i + 1)).subset_by_pos(chrom)
+                exec("%s = %d" % ("ref" + str(i + 1), ref_tmp))
 
-        log.info("Preparing weight database")
+                if len(ref_tmp) == 0:
+                    err_str = "No reference LD SNPs found at chromosome {} \
+                    for population " + str(i + 1)
+                    err_str = err_str.format(chrom)
+                    raise Exception(err_str)
+
+        log.info("Preparing weight database for different populations")
         # not the best approach, but load_db creates an empty db if the file does not exist
         # so check here that we actually -have- some db
         if not os.path.isfile(args.weights):
@@ -1325,6 +1357,7 @@ def build_mefocus_parser(subp):
                      help="Maximum number of genes that can be causal.")
     fmp.add_argument("--prior-prob", type=parse_prob, default=1e-3,
                      help="Prior probability for a gene to be causal.")
+                     ## QQQ
     fmp.add_argument("--prior-chisq", type=parse_chisq, default=40,
                      help="Prior sample-size-scaled variance for causal gene effect sizes.")
     fmp.add_argument("--credible-level", type=parse_prob, default=0.9,
