@@ -328,6 +328,50 @@ def bayes_factor(zscores, idx_set, wcor, prior_chisq, prb, use_log=True):
     else:
         return np.exp(cur_bf)
 
+def me_bayes_factor(zscores, idx_set, wcor, prior_chisq, prb, use_log=True):
+    """
+    Compute the Bayes Factor for the evidence that a set of genes explain the observed association signal under the
+    correlation structure.
+
+    :param zscores: numpy.ndarray TWAS zscores
+    :param idx_set: list the indices representing the causal gene-set
+    :param wcor: numpy.ndarray predicted expression correlation
+    :param prior_chisq: float prior effect-size variance scaled by GWAS sample size
+    :param prb:  float prior probability for a gene to be causal
+    :param use_log: bool whether to compute the log Bayes Factor
+
+    :return: float the Bayes Factor (log Bayes Factor if use_log = True)
+    """
+    idx_set = np.array(idx_set)
+
+    m = len(zscores)
+
+    # only need genes in the causal configuration using FINEMAP BF trick
+    nc = len(idx_set)
+    cur_chi2 = prior_chisq / nc
+
+    cur_wcor = wcor[idx_set].T[idx_set].T
+    cur_zscores = zscores[idx_set]
+
+    # compute SVD for robust estimation
+    if nc > 1:
+        cur_U, cur_EIG, _ = lin.svd(cur_wcor)
+        scaled_chisq = (cur_zscores.T.dot(cur_U)) ** 2
+    else:
+        cur_U, cur_EIG = 1, cur_wcor
+        scaled_chisq = cur_zscores ** 2
+
+    # log BF
+    cur_bf = 0.5 * -np.sum(np.log(1 + cur_chi2 * cur_EIG)) + \
+        0.5 * np.sum((cur_chi2 / (1 + cur_chi2 * cur_EIG)) * scaled_chisq)
+
+    # log prior
+    cur_prior = nc * np.log(prb) + (m - nc) * np.log(1 - prb)
+
+    if use_log:
+        return cur_bf, cur_prior
+    else:
+        return np.exp(cur_bf), np.exp(cur_prior)
 
 def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, max_genes=3, ridge=0.1, prior_prob=1e-3,
              prior_chisq=40, credible_level=0.9, plot=False):
@@ -392,6 +436,155 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
     for subset in chain.from_iterable(combinations(rm, n) for n in range(1, k + 1)):
 
         local = bayes_factor(zscores, subset, wcor, prior_chisq, prior_prob)
+
+        # keep track for marginal likelihood
+        marginal = np.logaddexp(local, marginal)
+
+        # marginalize the posterior for marginal-posterior on causals
+        for idx in subset:
+            if pips[idx] == 0:
+                pips[idx] = local
+            else:
+                pips[idx] = np.logaddexp(pips[idx], local)
+
+    pips = np.exp(pips - marginal)
+    null_res = np.exp(null_res - marginal)
+
+    # Query the db to grab model attributes
+    # We might want to filter to only certain attributes at some point
+    session = pf.get_session()
+    attr = pd.read_sql(session.query(pf.ModelAttribute)
+                       .filter(pf.ModelAttribute.model_id.in_(meta_data.model_id.values.astype(object)))  # why doesn't inte64 work!?!
+                       .statement, con=session.connection())
+
+    # convert from long to wide format
+    attr = attr.pivot("model_id", "attr_name", "value")
+
+    # clean up and return results
+    region = str(ref_geno).replace(" ", "")
+
+    # dont sort here to make plotting easier
+    df = create_output(meta_data, attr, zscores, pips, null_res, region)
+
+    log.info("Completed fine-mapping at region {}".format(ref_geno))
+    if plot:
+        log.info("Creating FOCUS plots at region {}".format(ref_geno))
+        plot_arr = pf.focus_plot(wcor, df)
+
+        # sort here and create credible set
+        df = add_credible_set(df, credible_set=credible_level)
+        return df, plot_arr
+
+    else:
+        # sort here and create credible set
+        df = add_credible_set(df, credible_set=credible_level)
+        return df
+
+def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, max_genes=3, ridge=0.1, prior_prob=1e-3,
+             credible_level=0.9, plot=False):
+    """
+    Perform a TWAS and fine-map the results.
+
+    :param gwas: pyfocus.GWAS object for the risk region
+    :param wcollection: pandas.DataFrame containing overlapping eQTL weight information for the risk region
+    :param ref_geno: pyfocus.LDRefPanel object for the risk region
+    :param intercept: bool flag to estimate the average TWAS signal due to tagged pleiotropy
+    :param heterogeneity: bool flag to compute sample variance in TWAS test assuming multiplicative random effect
+    :param max_genes: int or None the maximum number of genes to include in any given causal configuration. None if all genes
+    :param ridge: float ridge adjustment for LD estimation (default = 0.1)
+    :param prior_prob: float prior probability for a gene to be causal
+    :param prior_chisq: float prior effect-size variance scaled by GWAS sample size
+    :param credible_level: float the credible-level to compute credible gene sets (default = 0.9)
+    :param plot: bool whether or not to generate visualizations/plots at the risk region
+
+    :return: pandas.DataFrame containing the TWAS statistics and fine-mapping results if plot=False.
+        (pandas.DataFrame, list of plot-objects) if plot=True
+    """
+    log = logging.getLogger(pf.LOG)
+    log.info("Starting fine-mapping at region {}".format(ref_geno))
+
+    # align all GWAS, LD reference, and overlapping molecular weights
+    n_pop = len(gwas)
+    gwas = [None] * n_pop
+    wmat = [None] * n_pop
+    meta_data = [None] * n_pop
+    ldmat = [None] * n_pop
+
+    for i in range(n_pop):
+        log.info("Aligning population " + str(i + 1) + ". It will return None if following errors occur")
+        parameters_tmp = align_data(gwas[i], ref_geno[i], wcollection[i], ridge=ridge)
+
+        if parameters_tmp is None:
+            # break; logging of specific reason should be in align_data
+            return None
+        else:
+            gwas[i], wmat[i], meta_data[i], ldmat[i] = parameters_tmp
+
+    # Get common genes across populations
+    gene_set = np.array(meta_data[0]["ens_geneid"])
+    for i in range(n_pop - 1):
+        gene_set = np.intersect1d(gene_set, np.array(meta_data[i + 1]["ens_gene_id"]))
+
+    if len(gene_set) == 0:
+        log.warning("No common genes found.")
+        return
+
+    for i in range(n_pop):
+        idx = meta_data[i].index[meta_data[i]["ens_gene_id"].isin(gene_set)].tolist()
+        wmat[i] = wmat[i].iloc[idx]
+        meta_data[i] = meta_data[i].ilox[idx, :]
+
+    # run local TWAS
+    zscores = [None] * n_pop
+    for i in range(n_pop):
+        log.info("Running TWAS for population " + str(i + 1) + ".")
+        zscores_tmp = []
+        for idx, weights in enumerate(wmat[i].T):
+            log.debug("Computing TWAS association statistic for gene {}".format(meta_data[i].iloc[idx]["ens_gene_id"]))
+            beta, se = assoc_test(weights, gwas[i], ldmat[i], heterogeneity)
+            zscores_tmp.append(beta / se)
+        zscores[i] = np.array(zscores_tmp)
+
+    # calculate prior chisq
+    prior_chisq = [None] * n_pop
+    for i in range(n_pop):
+        wcor, swld = estimate_cor(wmat[i], ldmat[i], intercept = False)
+        prior_chisq[i] = mdot([zscore[i], lin.pinv(wcor), zscore[i]])
+
+    # perform fine-mapping
+    log.debug("Estimating local TWAS correlation structure")
+    wcor = [None] * n_pop
+    swld = [None] * n_pop
+    for i in range(n_pop):
+        wcor_tmp, swld_tmp = estimate_cor(wmat[i], ldmat[i], intercept)
+        wcor[i] = wcor_tmp
+        swld[i] = swld_tmp
+
+    m = len(zscores)
+    rm = range(m)
+    pips = np.zeros(m)
+
+    inter_z = [None] * n_pop
+    for i in range(n_pop):
+        if intercept:
+            # should really be done at the SNP level first ala Barfield et al 2018
+            log.debug("Regressing out average tagged pleiotropic associations for population " + str(i + 1))
+            zscores[i], inter_z[i] = get_resid(zscores[i], swld[i], wcor[i])
+        else:
+            inter_z[i] = None
+
+    k = m if max_genes > m else max_genes
+    null_res = m * np.log(1 - prior_prob)
+    marginal = null_res
+    # enumerate all subsets
+    for subset in chain.from_iterable(combinations(rm, n) for n in range(1, k + 1)):
+        local = 0
+        for i in range(n_pop):
+            local_bf, local_prior = bayes_factor(zscores[i], subset, wcor[i], prior_chisq[i], prior_prob)
+            if i == 0:
+                local += local_bf + local_prior
+            else:
+                local += local_bf
 
         # keep track for marginal likelihood
         marginal = np.logaddexp(local, marginal)

@@ -21,10 +21,18 @@ class IndBlocks(object):
 
     REQ_COLS = [CHRCOL, STARTCOL, STOPCOL]
 
+    dft_location = {"EUR": "ld_blocks/grch37.eur.loci.bed",
+    "AFR": "ld_blocks/grch37.afr.loci.bed",
+    "EAS": "ld_blocks/grch37.eas.loci.bed",
+    "EUR-AFR": "ld_blocks/eur.afr.loci.bed",
+    "EUR-EAS": "ld_blocks/eur.eas.loci.bed",
+    "EAS-AFR": "ld_blocks/eas.afr.loci.bed",
+    "EUR-EAS-AFR": "ld_blocks/eur.eas.afr.loci.bed"}
+
     def __init__(self, regions=None):
-        if regions is None:
+        if regions in dft_location.keys():
             dtype_dict = {IndBlocks.CHRCOL: "category", IndBlocks.STARTCOL: int, IndBlocks.STOPCOL: int}
-            local_ld_blocks = pkg_resources.resource_filename(__name__, 'ld_blocks/grch37.eur.loci.bed')
+            local_ld_blocks = pkg_resources.resource_filename(__name__, dft_location[regions])
             self._regions = pd.read_csv(local_ld_blocks, delim_whitespace=True, dtype=dtype_dict)
         else:
             # type checking in python == dumb
@@ -151,7 +159,7 @@ class LDRefPanel(object):
             G = (G - np.mean(G, axis=0)) / np.std(G, axis=0)
             _, S, V = lin.svd(G, full_matrices=True)
 
-            # adjust 
+            # adjust
             D = np.full(p, adjust)
             D[:len(S)] = D[:len(S)] + (S**2 / n)
 
