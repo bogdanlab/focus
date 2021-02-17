@@ -61,16 +61,16 @@ class GWAS(pd.DataFrame):
 
 
     @classmethod
-    def parse_gwas(cls, stream, idx = "1"):
+    def parse_gwas(cls, stream):
         dtype_dict = {'CHR': "category", 'SNP': str, 'Z': float, 'N': float, 'A1': str, 'A2': str}
         try:
             df = pd.read_csv(stream, dtype=dtype_dict, delim_whitespace=True, compression='infer')
         except Exception as e:
-            raise Exception("Parsing GWAS failed for population " + idx, ". " + str(e))
+            raise Exception(f"Parsing GWAS failed for population at {stream}." + str(e))
 
         for column in GWAS.REQ_COLS:
             if column not in df:
-                raise ValueError("{}-column not found in summary statistics".format(column) + " for population " + idx)
+                raise ValueError(f"{column}-column not found in summary statistics at {stream}.")
 
         if GWAS.PCOL not in df:
             df[GWAS.PCOL] = stats.chi2.sf(df[GWAS.ZCOL].values ** 2, 1)

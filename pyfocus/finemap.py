@@ -521,6 +521,7 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
             gwas[i], wmat[i], meta_data[i], ldmat[i] = parameters_tmp
 
     # Get common genes across populations
+    # Tissue
     gene_set = np.array(meta_data[0]["ens_geneid"])
     for i in range(n_pop - 1):
         gene_set = np.intersect1d(gene_set, np.array(meta_data[i + 1]["ens_gene_id"]))
@@ -545,7 +546,8 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
             zscores_tmp.append(beta / se)
         zscores[i] = np.array(zscores_tmp)
 
-    # calculate prior chisq
+    # Calculate prior chisq
+    # TODO replace PINV with solve
     prior_chisq = [None] * n_pop
     for i in range(n_pop):
         wcor, swld = estimate_cor(wmat[i], ldmat[i], intercept = False)
@@ -580,7 +582,7 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
     for subset in chain.from_iterable(combinations(rm, n) for n in range(1, k + 1)):
         local = 0
         for i in range(n_pop):
-            local_bf, local_prior = bayes_factor(zscores[i], subset, wcor[i], prior_chisq[i], prior_prob)
+            local_bf, local_prior = me_bayes_factor(zscores[i], subset, wcor[i], prior_chisq[i], prior_prob)
             if i == 0:
                 local += local_bf + local_prior
             else:
@@ -601,6 +603,7 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
 
     # Query the db to grab model attributes
     # We might want to filter to only certain attributes at some point
+    
     session = pf.get_session()
     attr = pd.read_sql(session.query(pf.ModelAttribute)
                        .filter(pf.ModelAttribute.model_id.in_(meta_data.model_id.values.astype(object)))  # why doesn't inte64 work!?!

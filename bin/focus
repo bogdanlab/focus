@@ -838,50 +838,55 @@ def run_twas(args):
 
     return 0
 
+def region_sanity_check(args_chr, args_start, args_stop):
+    chrom = None
+    start_bp = None
+    stop_bp = None
+    if any(x is not None for x in [args_chr, args_start, args_stop]):
+        if args_start is not None and args_chr is None:
+            raise ValueError("Option --start cannot be set unless --chr is specified")
+        if args_stop is not None and args_chr is None:
+            raise ValueError("Option --stop cannot be set unless --chr is specified")
+        chrom = args_chr
+        # parse start/stop positions and make sure they're ordered (if exist)
+        if args_start is not None:
+            start_bp = parse_pos(args_start, "--start")
+        else:
+            start_bp = None
+
+        if args_stop is not None:
+            stop_bp = parse_pos(args_stop, "--stop")
+        else:
+            stop_bp = None
+
+        if args_start is not None and args_stop is not None:
+            if start_bp >= stop_bp:
+                raise ValueError("Specified --start position must be before --stop position")
+
+    return chrom, start_bp, stop_bp
 
 def run_me_twas(args):
     log = logging.getLogger(pyfocus.LOG)
+    # TODO
+    # 1. split region sanity check into a function
+
     try:
         # perform sanity arguments checking before continuing
-        chrom = None
-        start_bp = None
-        stop_bp = None
-        if any(x is not None for x in [args.chr, args.start, args.stop]):
-            if args.start is not None and args.chr is None:
-                raise ValueError("Option --start cannot be set unless --chr is specified")
-            if args.stop is not None and args.chr is None:
-                raise ValueError("Option --stop cannot be set unless --chr is specified")
-
-            chrom = args.chr
-
-            # parse start/stop positions and make sure they're ordered (if exist)
-            if args.start is not None:
-                start_bp = parse_pos(args.start, "--start")
-            else:
-                start_bp = None
-
-            if args.stop is not None:
-                stop_bp = parse_pos(args.stop, "--stop")
-            else:
-                stop_bp = None
-
-            if args.start is not None and args.stop is not None:
-                if start_bp >= stop_bp:
-                    raise ValueError("Specified --start position must be before --stop position")
+        chrom, start_bp, stop_bp = region_sanity_check(args.chr, args.start, args.stop)
 
         # load GWAS summary data for each population
-        log.info("Preparing GWAS summary file for different populations")
+        log.info("Preparing GWAS summary file for different populations.")
 
         df_paths = args.gwas.split(";")
         n_pop = len(df_paths)
-        log.info("Detecting " + str(n_pop) + " populations for fine-mapping")
+        log.info(f"Detecting {n_pop} populations for fine-mapping.")
 
         gwas = [None] * n_pop
         for i in range(n_pop):
-            log.info("Preparing GWAS summary file for population " + str(i + 1))
-            gwas_tmp = pyfocus.GWAS.parse_gwas(df_paths[i], idx = str(i + 1))
+            log.info(f"Preparing GWAS summary file for population at {df_paths[i]}.")
+            gwas_tmp = pyfocus.GWAS.parse_gwas(df_paths[i])
             if len(gwas_tmp) == 0:
-                raise ValueError("No GWAS summary file for population " + str(i + 1))
+                raise ValueError(f"No GWAS summary file for population at {df_paths[i]}.")
             gwas[i] = gwas_tmp
 
         # if chrom is supplied just filter here
@@ -890,13 +895,11 @@ def run_me_twas(args):
                 gwas[i] = gwas[i].subset_by_pos(chrom)
 
                 if len(gwas[i]) == 0:
-                    err_str = "No GWAS SNPs found at chromosome {} \
-                    for population " + str(i + 1)
-                    err_str = err_str.format(chrom)
-                    raise Exception(err_str)
+                    err_str = f"No GWAS SNPs found at chromosome {chrom} at {df_paths[i]}."
+                    raise ValueError(err_str)
 
         # load reference genotype data for each population
-        log.info("Preparing reference SNP data")
+        log.info("Preparing reference SNP data.")
         df_refs = args.ref.split(";")
 
         if len(df_refs) != n_pop:
@@ -904,28 +907,25 @@ def run_me_twas(args):
                 from the number of GWAS data.")
         else:
             log.info("The number of LD reference panel is equal to the number \
-            of GWAS data")
+            of GWAS data.")
 
         ref = [None] * n_pop
         for i in range(n_pop):
-            log.info("Preparing reference SNP data for population " + str(i + 1))
+            log.info(f"Preparing reference SNP data for population at {df_refs[i]}.")
             ref_tmp = pyfocus.LDRefPanel.parse_plink(df_refs[i])
             if len(ref_tmp) == 0:
-                raise ValueError("No reference SNP data for population " + str(i + 1))
+                raise ValueError(f"No reference SNP data for population at {df_refs[i]}.")
             ref[i] = ref_tmp
 
         # if chrom is supplied just filter here
         if chrom is not None:
             for i in range(n_pop):
                 ref[i] = ref[i].subset_by_pos(chrom)
-
                 if len(ref[i]) == 0:
-                    err_str = "No reference LD SNPs found at chromosome {} \
-                    for population " + str(i + 1)
-                    err_str = err_str.format(chrom)
+                    err_str = f"No reference LD SNPs found at chromosome {chrom} at {df_refs[i]}."
                     raise Exception(err_str)
 
-        log.info("Preparing weight database for different populations")
+        log.info("Preparing weight database for different populations.")
         # not the best approach, but load_db creates an empty db if the file does not exist
         # so check here that we actually -have- some db
         df_dbs = args.weights.split(";")
@@ -937,13 +937,12 @@ def run_me_twas(args):
         session = [None] * n_pop
         for i in range(n_pop):
             if not os.path.isfile(df_dbs[i]):
-                err_str = "Cannot find database {} for population " + str(i + 1)
-                raise ValueError(err_str.format(df_dbs[i]))
+                raise ValueError(f"Cannot find database at {df_dbs[i]}.")
 
         for i in range(n_pop):
             session_tmp = pyfocus.load_db(df_dbs[i])
             if len(session_tmp) == 0:
-                raise ValueError("No reference SNP data for population " + str(i + 1))
+                raise ValueError(f"No reference SNP data at {df_dbs{i}}.")
             session[i] = session_tmp
 
         # alias
@@ -966,45 +965,42 @@ def run_me_twas(args):
             written = False
             for region in partitions:
                 chrom, start, stop = region
-
                 # grab local GWAS data
                 local_gwas = [None] * n_pop
                 skip = False
                 ct = 0
                 for i in range(n_pop):
                     local_gwas_tmp = gwas[i].subset_by_pos(chrom, start=start, stop=stop)
-
                     # only fine-map regions that contain GWAS data
                     if len(local_gwas_tmp) == 0：
-                        warn_str = "No GWAS data found found at {}:{} - {}:{} for population " + str(i + 1) + ". Skipping"
-                        log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
+                        log.warning(f"No GWAS data found found at {chrom}:{int(start)} - {chrom}:{int(stop)} at {df_paths[i]}. Skipping.")
                         skip = True
                         break
 
                     # only fine-map regions that contain GWAS signal
                     if min(local_gwas[i].P) >= args.p_threshold:
-                        warn_str = "No GWAS SNPs with p-value < {:.2g} found at {}:{} - {}:{} for popluation " + str(i + 1) + ". Skipping"
-                        log.warning(warn_str.format(args.p_threshold, chrom, int(start), chrom, int(stop)))
+                        log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at {chrom}:{int(start)} - {chrom}:{int(stop)} at {df_paths[i]}.")
                         ct += 1
-
                     local_gwas[i] = local_gwas_tmp
 
                 if skip:
                     continue
 
                 if ct == n_pop:
-                    warn_str = "No GWAS SNPs with p-value < {:.2g} found at {}:{} - {}:{} for all popluations. Skipping"
-                    log.warning(warn_str.format(args.p_threshold, chrom, int(start), chrom, int(stop)))
+                    log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at {chrom}:{int(start)} - {chrom}:{int(stop)} for all popluations. Skipping.")
                     continue
+                elif ct != 0:
+                    if bool(args.all_gwas_sig):
+                        log.warning(f"At least one popluation has no GWAS SNPs with p-value < {args.p_threshold} found at {chrom}:{int(start)} - {chrom}:{int(stop)} \
+                        while all_gwas_sig parameter is specified True. Skipping.")
+                        continue
 
                 # grab local reference genotype data
                 local_ref = [None] * n_pop
                 for i in range(n_pop):
                     local_ref_tmp = ref[i].subset_by_pos(chrom, start=start, stop=stop)
-
                     if len(local_ref_tmp) == 0:
-                        warn_str = "No reference LD SNPs found at {}:{} - {}:{} for population " + str(i + 1) + ". Skipping"
-                        log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
+                        log.warning(f"No reference LD SNPs found at {chrom}:{int(start)} - {chrom}:{int(stop)} at {df_refs[i]}. Skipping")
                         skip = True
                         break
                     local_ref[i] = local_ref_tmp
@@ -1034,8 +1030,7 @@ def run_me_twas(args):
                         snp_weights_tmp = pd.concat(snp_weights_tmp, ignore_index=True)
                         # if there are no SNPs found in this region or none of the SNPs overlap the GWAS skip it
                         if len(snp_weights_tmp) == 0:
-                            warn_str = "No overlapping weights at {}:{} - {}:{} for population " + str(i + 1) + ". Skipping"
-                            log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
+                            log.warning(f"No overlapping weights at {chrom}:{int(start)} - {chrom}:{int(stop)} at {df_dbs[i]}. Skipping")
                             skip = True
                             break
                         snp_weights[i] = snp_weights_tmp
@@ -1388,6 +1383,8 @@ def build_mefocus_parser(subp):
                            "'EUR-AFR', 'EUR-EAS', 'EAS-AFR', 'EUR-EAS-AFR'.")
 
     # fine-map general options
+    fmp.add_argument("--all-gwas-sig", default=False,
+                     help="Boolean indicator for whether fine-mapping regions that contains GWAS signal for all population; False means GWAS signal for at least one population.")
     fmp.add_argument("--tissue",
                      help="Name of tissue for tissue-prioritized fine-mapping. Relaxed matching. E.g., 'adipose' matches 'Adipose_subcutaneous'.")
     fmp.add_argument("--strict-tissue", action="store_true",
@@ -1402,9 +1399,6 @@ def build_mefocus_parser(subp):
                      help="Maximum number of genes that can be causal.")
     fmp.add_argument("--prior-prob", type=parse_prob, default=1e-3,
                      help="Prior probability for a gene to be causal.")
-                     ## QQQ
-    fmp.add_argument("--prior-chisq", type=parse_chisq, default=40,
-                     help="Prior sample-size-scaled variance for causal gene effect sizes.")
     fmp.add_argument("--credible-level", type=parse_prob, default=0.9,
                      help="Probability value to determine the credible gene set.")
 

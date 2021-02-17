@@ -8,18 +8,18 @@ from sqlalchemy.orm import relationship, sessionmaker
 Base = declarative_base()
 
 
-session = None
+session = []
 
 
 def set_session(ssn):
     global session
-    session = ssn
+    session.append(ssn)
     return
 
 
-def get_session():
+def get_session(idx = -1):
     global session
-    return session
+    return session[idx]
 
 
 def load_db(path):
