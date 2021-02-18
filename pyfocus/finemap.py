@@ -663,6 +663,16 @@ def calculate_pips(zscore, wmat, ldmat, max_genes, prior_prob):
             raise ValueError("Generated PIPs, null_res, Zscores, and Weight matrix have different length.")
             return None, None
 
+def num_convert(i):
+    nth = {1: "1st",
+    2: "2nd",
+    3: "3rd",
+    4: "4th",
+    5: "5th",
+    6: "6th"}
+
+    return nth[i]
+
 def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, max_genes=3, ridge=0.1, prior_prob=1e-3,
              credible_level=0.9, plot=False):
     """
@@ -694,7 +704,7 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
     ldmat = [None] * n_pop
 
     for i in range(n_pop):
-        log.info(f"Aligning population {i + 1}. It will return None if following errors occur")
+        log.info(f"Aligning {num_convert(i)} population. It will return None if following errors occur.")
         parameters_tmp = align_data(gwas[i], ref_geno[i], wcollection[i], ridge=ridge)
         if parameters_tmp is None:
             # break; logging of specific reason should be in align_data
@@ -720,10 +730,10 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
     # run local TWAS
     zscores = [None] * n_pop
     for i in range(n_pop):
-        log.info(f"Running TWAS for population {i + 1}.")
+        log.info(f"Running TWAS for {num_convert(i + 1)}population.")
         zscores_tmp = []
         for idx, weights in enumerate(wmat[i].T):
-            log.debug(f"Computing TWAS association statistic for gene {meta_data[i].iloc[idx]["ens_gene_id"]}."
+            log.debug(f"Computing TWAS association statistic for gene {meta_data[i].iloc[idx]['ens_gene_id']}.")
             beta, se = assoc_test(weights, gwas[i], ldmat[i], heterogeneity)
             zscores_tmp.append(beta / se)
         zscores[i] = np.array(zscores_tmp)
@@ -732,7 +742,7 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
     for i in range(n_pop):
         if intercept:
             # should really be done at the SNP level first ala Barfield et al 2018
-            log.debug(f"Regressing out average tagged pleiotropic associations for population {i + 1}")
+            log.debug(f"Regressing out average tagged pleiotropic associations for {num_convert(i + 1)} population")
             zscores[i], inter_z[i] = get_resid(zscores[i], swld[i], wcor[i])
         else:
             inter_z[i] = None

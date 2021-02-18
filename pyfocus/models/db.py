@@ -10,7 +10,16 @@ Base = declarative_base()
 
 session = []
 
+def num_convert(i):
+    nth = {1: "1st",
+    2: "2nd",
+    3: "3rd",
+    4: "4th",
+    5: "5th",
+    6: "6th"}
 
+    return nth[i]
+    
 def set_session(ssn):
     global session
     session.append(ssn)
@@ -19,12 +28,13 @@ def set_session(ssn):
 
 def get_session(idx):
     global session
+    print(f"Getting Session for {num_convert(idx+1)} population.")
     return session[idx]
 
 
 def load_db(path, idx):
     # create engine, and ensure that tables exist
-    engine = create_engine("sqlite:///{}".format(path))
+    engine = create_engine(f"sqlite:///{path}")
     Base.metadata.create_all(engine)
 
     # create a session for all db operations

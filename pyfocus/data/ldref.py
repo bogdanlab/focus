@@ -9,6 +9,13 @@ import scipy.linalg as lin
 
 from pandas_plink import read_plink
 
+dft_location = {"EUR": "ld_blocks/grch37.eur.loci.bed",
+"AFR": "ld_blocks/grch37.afr.loci.bed",
+"EAS": "ld_blocks/grch37.eas.loci.bed",
+"EUR-AFR": "ld_blocks/eur.afr.loci.bed",
+"EUR-EAS": "ld_blocks/eur.eas.loci.bed",
+"EAS-AFR": "ld_blocks/eas.afr.loci.bed",
+"EUR-EAS-AFR": "ld_blocks/eur.eas.afr.loci.bed"}
 
 class IndBlocks(object):
     """
@@ -21,34 +28,29 @@ class IndBlocks(object):
 
     REQ_COLS = [CHRCOL, STARTCOL, STOPCOL]
 
-    dft_location = {"EUR": "ld_blocks/grch37.eur.loci.bed",
-    "AFR": "ld_blocks/grch37.afr.loci.bed",
-    "EAS": "ld_blocks/grch37.eas.loci.bed",
-    "EUR-AFR": "ld_blocks/eur.afr.loci.bed",
-    "EUR-EAS": "ld_blocks/eur.eas.loci.bed",
-    "EAS-AFR": "ld_blocks/eas.afr.loci.bed",
-    "EUR-EAS-AFR": "ld_blocks/eur.eas.afr.loci.bed"}
-
     def __init__(self, regions=None):
-        if regions in dft_location.keys():
-            dtype_dict = {IndBlocks.CHRCOL: "category", IndBlocks.STARTCOL: int, IndBlocks.STOPCOL: int}
-            local_ld_blocks = pkg_resources.resource_filename(__name__, dft_location[regions])
-            self._regions = pd.read_csv(local_ld_blocks, delim_whitespace=True, dtype=dtype_dict)
+        if regions is None:
+            raise ValueError("Please specify independent regions location or default regions with 'EUR', etc.")
         else:
-            # type checking in python == dumb
-            if type(regions) is str or pf.is_file(regions):
+            if type(regions) is str:
+                try:
+                    dtype_dict = {IndBlocks.CHRCOL: "category", IndBlocks.STARTCOL: int, IndBlocks.STOPCOL: int}
+                    local_ld_blocks = pkg_resources.resource_filename(__name__, dft_location[regions])
+                    self._regions = pd.read_csv(local_ld_blocks, delim_whitespace=True, dtype=dtype_dict)
+                except Exception as e:
+                    raise Exception("Fail population names specified. 'EUR', 'EUR-EAS', etc. for more values, check documentation." + str(e))
+            elif pf.is_file(regions):
                 try:
                     dtype_dict = {IndBlocks.CHRCOL: "category", IndBlocks.STARTCOL: int, IndBlocks.STOPCOL: int}
                     self._regions = pd.read_csv(regions, delim_whitespace=True, dtype=dtype_dict)
                 except Exception as e:
                     raise Exception("Parsing LD blocks failed:" + str(e))
-
             elif type(regions) is pd.core.frame.DataFrame:
                 self._regions = regions
 
             for column in IndBlocks.REQ_COLS:
                 if column not in self._regions:
-                    raise ValueError("{}-column not found in regions".format(column))
+                    raise ValueError(f"{column}-column not found in regions.")
 
             self._regions = self._regions[IndBlocks.REQ_COLS]
 
@@ -82,6 +84,8 @@ class IndBlocks(object):
 
         return
 
+    def show_nrow(self):
+        return len(self._regions.index)
 
 class LDRefPanel(object):
     CHRCOL = "chrom"
