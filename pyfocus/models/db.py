@@ -17,12 +17,12 @@ def set_session(ssn):
     return
 
 
-def get_session(idx = -1):
+def get_session(idx):
     global session
     return session[idx]
 
 
-def load_db(path):
+def load_db(path, idx):
     # create engine, and ensure that tables exist
     engine = create_engine("sqlite:///{}".format(path))
     Base.metadata.create_all(engine)
@@ -31,7 +31,7 @@ def load_db(path):
     factory = sessionmaker(bind=engine)
 
     set_session(factory())
-    ssn = get_session()
+    ssn = get_session(idx)
 
     return ssn
 
