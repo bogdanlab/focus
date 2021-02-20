@@ -909,8 +909,7 @@ def run_me_twas(args):
         if len(df_refs) != n_pop:
             raise Exception("The number of LD refernece panel is different from the number of GWAS data.")
         else:
-            log.info("The number of LD reference panel is equal to the number \
-            of GWAS data.")
+            log.info("The number of LD reference panel is equal to the number of GWAS data.")
 
         ref = [None] * n_pop
         for i in range(n_pop):
@@ -968,6 +967,7 @@ def run_me_twas(args):
                 local_gwas = [None] * n_pop
                 skip = False
                 ct = 0
+                # import pdb; pdb.set_trace()
                 for i in range(n_pop):
                     local_gwas_tmp = gwas[i].subset_by_pos(chrom, start=start, stop=stop)
                     # only fine-map regions that contain GWAS data
@@ -977,7 +977,7 @@ def run_me_twas(args):
                         break
 
                     # only fine-map regions that contain GWAS signal
-                    if min(local_gwas[i].P) >= args.p_threshold:
+                    if min(local_gwas_tmp.P) >= args.p_threshold:
                         log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at {chrom}:{int(start)} - {chrom}:{int(stop)} at {df_paths[i]}.")
                         ct += 1
                     local_gwas[i] = local_gwas_tmp
@@ -990,8 +990,7 @@ def run_me_twas(args):
                     continue
                 elif ct != 0:
                     if bool(args.all_gwas_sig):
-                        log.warning(f"At least one popluation has no GWAS SNPs with p-value < {args.p_threshold} found at {chrom}:{int(start)} - {chrom}:{int(stop)} \
-                        while all_gwas_sig parameter is specified True. Skipping.")
+                        log.warning(f"At least one popluation has no GWAS SNPs with p-value < {args.p_threshold} found at {chrom}:{int(start)} - {chrom}:{int(stop)} while all_gwas_sig parameter is specified True. Skipping.")
                         continue
 
                 # grab local reference genotype data
@@ -1024,7 +1023,7 @@ def run_me_twas(args):
                                                        .join(Model, Model.id == Weight.model_id)
                                                        .join(MolecularFeature, MolecularFeature.id == Model.mol_id)
                                                        .join(RefPanel, RefPanel.id == Model.ref_id)
-                                                       .statement, con=session.connection()))
+                                                       .statement, con=session[i].connection()))
 
                         snp_weights_tmp = pd.concat(snp_weights_tmp, ignore_index=True)
                         # if there are no SNPs found in this region or none of the SNPs overlap the GWAS skip it

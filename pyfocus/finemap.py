@@ -8,7 +8,7 @@ from itertools import chain, combinations
 from numpy.linalg import multi_dot as mdot
 import pyfocus as pf
 
-__all__ = ["fine_map"]
+__all__ = ["fine_map", "me_fine_map", "num_convert"]
 
 
 def add_credible_set(df, credible_set=0.9):
@@ -137,14 +137,14 @@ def me_create_output(meta_data, attr, zscores, pips, null_res, region):
     for i in range(n_pop):
         df_tmp = pd.merge(meta_data[i], attr[i], left_on="model_id", right_index=True)
         df_tmp.columns = df_tmp.columns + f"_pop{i+1}"
-        if len(df) == len(df_tmp):
-            if i == 0:
-                df = df_tmp
-            else:
-                df = pd.concat([df, df_tmp], axis=1, ignore_index=True)
+        if i == 0:
+            df = df_tmp
         else:
-            raise ValueError("Cannot column binds output due to different rows.")
-            return None
+            if len(df) == len(df_tmp):
+                df = pd.concat([df, df_tmp], axis=1, ignore_index=True)
+            else:
+                raise ValueError(f"Cannot column binds output due to different rows for populations.")
+                return None
 
     for i in range(n_pop):
         df[f"twas_z_pop{i+1}"] = zscores[i]
@@ -307,7 +307,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     # re-rorder by tx_start
     ranks = np.argsort(meta_data["tx_start"].values)
     wmat = wmat.T[ranks].T
-    meta_data = meta_data.iloc[ranks]
+    meta_data = meta_data.iloc[ranks].reset_index(drop = True)
 
     return gwas, wmat, meta_data, ldmat
 
@@ -584,15 +584,17 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
         df = add_credible_set(df, credible_set=credible_level)
         return df
 
-def calculate_pips(zscore, wmat, ldmat, max_genes, prior_prob):
-    n_pop = len(zscore)
+def calculate_pips(zscores, wmat, ldmat, max_genes, prior_prob, intercept):
+    log = logging.getLogger(pf.LOG)
+
+    n_pop = len(zscores)
     # Calculate prior chisq
     # TODO replace PINV with solve
 
     prior_chisq = [None] * n_pop
     for i in range(n_pop):
         wcor, swld = estimate_cor(wmat[i], ldmat[i], intercept = False)
-        prior_chisq[i] = mdot([zscore[i], lin.pinv(wcor), zscore[i]])
+        prior_chisq[i] = mdot([zscores[i], lin.pinv(wcor), zscores[i]])
 
     # perform fine-mapping
     log.debug("Estimating local TWAS correlation structure")
@@ -698,14 +700,15 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
 
     # align all GWAS, LD reference, and overlapping molecular weights
     n_pop = len(gwas)
+    gwas_copy = gwas
     gwas = [None] * n_pop
     wmat = [None] * n_pop
     meta_data = [None] * n_pop
     ldmat = [None] * n_pop
 
     for i in range(n_pop):
-        log.info(f"Aligning {num_convert(i)} population. It will return None if following errors occur.")
-        parameters_tmp = align_data(gwas[i], ref_geno[i], wcollection[i], ridge=ridge)
+        log.info(f"Aligning GWAS, LD, and eQTL weights for {num_convert(i+1)} population. It will skill this region if following errors occur.")
+        parameters_tmp = align_data(gwas_copy[i], ref_geno[i], wcollection[i], ridge=ridge)
         if parameters_tmp is None:
             # break; logging of specific reason should be in align_data
             return None
@@ -714,23 +717,24 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
 
     # Get common genes across populations
     # Tissue
-    gene_set = np.array(meta_data[0]["ens_geneid"])
+
+    gene_set = np.array(meta_data[0]["ens_gene_id"])
     for i in range(n_pop - 1):
         gene_set = np.intersect1d(gene_set, np.array(meta_data[i + 1]["ens_gene_id"]))
 
     if len(gene_set) == 0:
-        log.warning("No common genes found. Skipping.")
+        log.warning(f"No common genes found at region {ref_geno[0]}. Skipping.")
         return
 
     for i in range(n_pop):
         idx = meta_data[i].index[meta_data[i]["ens_gene_id"].isin(gene_set)].tolist()
-        wmat[i] = wmat[i].iloc[idx]
-        meta_data[i] = meta_data[i].ilox[idx, :]
+        wmat[i] = wmat[i].T[idx].T
+        meta_data[i] = meta_data[i].iloc[idx, :]
 
     # run local TWAS
     zscores = [None] * n_pop
     for i in range(n_pop):
-        log.info(f"Running TWAS for {num_convert(i + 1)}population.")
+        log.info(f"Running TWAS for {num_convert(i + 1)} population.")
         zscores_tmp = []
         for idx, weights in enumerate(wmat[i].T):
             log.debug(f"Computing TWAS association statistic for gene {meta_data[i].iloc[idx]['ens_gene_id']}.")
@@ -748,7 +752,10 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
             inter_z[i] = None
 
     # calculate pips for single pop, and me.
-    pips, null_res = calculate_pips(zscore, wmat, ldmat, max_genes, prior_prob)
+    log.info(f"Calculating PIPs.")
+
+
+    pips, null_res = calculate_pips(zscores, wmat, ldmat, max_genes, prior_prob, intercept)
 
     # Query the db to grab model attributes
     # We might want to filter to only certain attributes at some point
@@ -760,7 +767,7 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
         session_tmp = pf.get_session(i)
         attr_tmp = pd.read_sql(session_tmp.query(pf.ModelAttribute)
                         .filter(pf.ModelAttribute.model_id.in_(meta_data[i].model_id.values.astype(object)))  # why doesn't inte64 work!?!
-                        .statement, con=session.connection())
+                        .statement, con=session_tmp.connection())
         # convert from long to wide format
         attr_tmp = attr_tmp.pivot("model_id", "attr_name", "value")
         attr[i] = attr_tmp
@@ -769,6 +776,7 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
         region[i] = region_tmp
 
     # dont sort here to make plotting easier
+    import pdb; pdb.set_trace()
     df = me_create_output(meta_data, attr, zscores, pips, null_res, region)
 
     log.info(f"Completed fine-mapping at region {ref_geno[0]}.")

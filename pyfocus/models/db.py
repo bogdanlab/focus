@@ -1,25 +1,25 @@
 # am i optimizing prematurely? do we need this heavy machinary?
 
-
+import logging
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, create_engine
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import relationship, sessionmaker
+import pyfocus as pf
 
 Base = declarative_base()
 
-
 session = []
 
-def num_convert(i):
-    nth = {1: "1st",
-    2: "2nd",
-    3: "3rd",
-    4: "4th",
-    5: "5th",
-    6: "6th"}
+# def num_convert(i):
+#     nth = {1: "1st",
+#     2: "2nd",
+#     3: "3rd",
+#     4: "4th",
+#     5: "5th",
+#     6: "6th"}
+#
+#     return nth[i]
 
-    return nth[i]
-    
 def set_session(ssn):
     global session
     session.append(ssn)
@@ -28,7 +28,8 @@ def set_session(ssn):
 
 def get_session(idx):
     global session
-    print(f"Getting Session for {num_convert(idx+1)} population.")
+    log = logging.getLogger(pf.LOG)
+    log.info(f"Getting Session for {pf.num_convert(idx+1)} population.")
     return session[idx]
 
 
