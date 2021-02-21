@@ -131,17 +131,24 @@ def me_create_output(meta_data, attr, zscores, pips, null_res, region):
     :return: pandas.DataFrame TWAS summary results
     """
 
+    # column name for meta_data and attrs
+    # 'ens_gene_id_pop2', 'ens_tx_id_pop2', 'mol_name_pop2', 'tissue_pop2',
+    #'ref_name_pop2', 'type_pop2', 'chrom_pop2', 'chrom_pop2',
+    # 'tx_start_pop2', 'tx_stop_pop2', 'inference_pop2', 'model_id_pop2',
+    # 'cv.R2_pop2', 'cv.R2.pval_pop2'
     # merge attributes
     n_pop = len(meta_data)
+    common_column = ["ens_gene_id", "ens_tx_id", "mol_name", "tissue", "ref_name", "type", "chrom", "tx_start", "tx_stop", "inference", "model_id"]
 
     for i in range(n_pop):
         df_tmp = pd.merge(meta_data[i], attr[i], left_on="model_id", right_index=True)
-        df_tmp.columns = df_tmp.columns + f"_pop{i+1}"
+        common_idx = [df_tmp.columns.get_loc(c) for c in df_tmp.columns if c not in common_column]
+        df_tmp.columns.values[common_idx] = df_tmp.columns[common_idx] + f"_pop{i+1}"
         if i == 0:
             df = df_tmp
         else:
             if len(df) == len(df_tmp):
-                df = pd.concat([df, df_tmp], axis=1, ignore_index=True)
+                df = pd.merge(df, df_tmp, how = "left", left_on=common_column, right_on=common_column)
             else:
                 raise ValueError(f"Cannot column binds output due to different rows for populations.")
                 return None
@@ -156,7 +163,7 @@ def me_create_output(meta_data, attr, zscores, pips, null_res, region):
             df[f"in_cred_set_me"] = 0
 
     # sort by tx start site and we're good to go
-    df = df.sort_values(by="tx_start_pop1")
+    df = df.sort_values(by="tx_start")
 
     # chrom is listed twice (once from weight and once from molfeature)
     idxs = np.where(df.columns.str.contains("chrom"))[0]
@@ -301,8 +308,9 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     # what other things should we include in here?
     meta_data = wcollection.loc[idxs,
                                 ["ens_gene_id", "ens_tx_id", "mol_name", "tissue", "ref_name", "type", "chrom", "tx_start",
-                                "tx_stop", "inference", "model_id"]
-    ]
+                                "tx_stop", "inference", "model_id"]]
+    # remove duplicated columns
+    meta_data = meta_data.loc[:, ~meta_data.columns.duplicated()]
 
     # re-rorder by tx_start
     ranks = np.argsort(meta_data["tx_start"].values)
@@ -613,7 +621,7 @@ def calculate_pips(zscores, wmat, ldmat, max_genes, prior_prob, intercept):
         pips = [None] * (n_pop + 1)
         null_res = [None] * (n_pop + 1)
 
-    m = len(zscores)
+    m = len(zscores[0])
     rm = range(m)
     k = m if max_genes > m else max_genes
     for i in range(len(pips)):
@@ -705,7 +713,7 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
     wmat = [None] * n_pop
     meta_data = [None] * n_pop
     ldmat = [None] * n_pop
-
+    # import pdb; pdb.set_trace()
     for i in range(n_pop):
         log.info(f"Aligning GWAS, LD, and eQTL weights for {num_convert(i+1)} population. It will skill this region if following errors occur.")
         parameters_tmp = align_data(gwas_copy[i], ref_geno[i], wcollection[i], ridge=ridge)
@@ -754,7 +762,6 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
     # calculate pips for single pop, and me.
     log.info(f"Calculating PIPs.")
 
-
     pips, null_res = calculate_pips(zscores, wmat, ldmat, max_genes, prior_prob, intercept)
 
     # Query the db to grab model attributes
@@ -776,7 +783,7 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
         region[i] = region_tmp
 
     # dont sort here to make plotting easier
-    import pdb; pdb.set_trace()
+
     df = me_create_output(meta_data, attr, zscores, pips, null_res, region)
 
     log.info(f"Completed fine-mapping at region {ref_geno[0]}.")

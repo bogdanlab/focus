@@ -10,16 +10,6 @@ Base = declarative_base()
 
 session = []
 
-# def num_convert(i):
-#     nth = {1: "1st",
-#     2: "2nd",
-#     3: "3rd",
-#     4: "4th",
-#     5: "5th",
-#     6: "6th"}
-#
-#     return nth[i]
-
 def set_session(ssn):
     global session
     session.append(ssn)

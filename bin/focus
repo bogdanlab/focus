@@ -1053,7 +1053,7 @@ def run_me_twas(args):
                         for i, plot in enumerate(plots):
                             fig_name = f"{args.output}.chr{chrom}.{int(start)}.{int(stop)}.pdf"
                             plot.savefig(fig_name, format='pdf', dpi=300)
-
+                    # import pdb; pdb.set_trace()
                     pyfocus.write_output(result, output, append=written)
                     written = True
 
