@@ -44,17 +44,18 @@ def me_add_credible_set(df, credible_set=0.9):
 
     :return: pandas.DataFrame containing TWAS summary results augmented with `in_cred_set` flag
     """
-    n_pips = np.sum(df.columns.str.contains("pip"))
+    # import pdb; pdb.set_trace()
+    n_pips = np.sum(df.columns.str.contains("pips"))
 
     for i in range(n_pips):
-        if i == (n_pips - 1):
-            name_pip = "pip_me"
+        if i == (n_pips - 1) and i > 0:
+            name_pip = "pips_me"
             name_set = "in_cred_set_me"
         else:
-            name_pip = f"pip_pop{i+1}"
+            name_pip = f"pips_pop{i+1}"
             name_set = f"in_cred_set_pop{i+1}"
 
-        df_tmp = df.sort_values(by=[name_pip], ascending=False)
+        df = df.sort_values(by=[name_pip], ascending=False)
 
         # add credible set flag
         psum = np.sum(df[name_pip].values)
@@ -117,7 +118,7 @@ def create_output(meta_data, attr, zscores, pips, null_res, region):
 
     return df
 
-def me_create_output(meta_data, attr, zscores, pips, null_res, region):
+def me_create_output(meta_data, attr, null_res, region):
     """
     Creates TWAS pandas.DataFrame output.
 
@@ -138,29 +139,57 @@ def me_create_output(meta_data, attr, zscores, pips, null_res, region):
     # 'cv.R2_pop2', 'cv.R2.pval_pop2'
     # merge attributes
     n_pop = len(meta_data)
-    common_column = ["ens_gene_id", "ens_tx_id", "mol_name", "tissue", "ref_name", "type", "chrom", "tx_start", "tx_stop", "inference", "model_id"]
+    join_col = ["ens_gene_id", "tissue", "model_id"]
+    pick_col = ["ens_gene_id", "tissue", "model_id", "inference", "cv.R2", "cv.R2.pval", "inter_z", "twas_z", "pips"]
+    # ori_col = ["ens_gene_id", "ens_tx_id", "mol_name", "tissue", "ref_name", "type chrom", "tx_start", "tx_stop",
+    #            "inference", "model_id", "cv.R2", "cv.R2.pval", "inter_z", "twas_z", "pips"]
 
+    # import pdb; pdb.set_trace()
     for i in range(n_pop):
         df_tmp = pd.merge(meta_data[i], attr[i], left_on="model_id", right_index=True)
-        common_idx = [df_tmp.columns.get_loc(c) for c in df_tmp.columns if c not in common_column]
-        df_tmp.columns.values[common_idx] = df_tmp.columns[common_idx] + f"_pop{i+1}"
+        # common_idx = [df_tmp.columns.get_loc(c) for c in df_tmp.columns if c not in common_column]
+        # df_tmp.columns.values[common_idx] = df_tmp.columns[common_idx] + f"_pop{i+1}"
+        if i != 0:
+            df_tmp = df_tmp[pick_col]
+        # else:
+        #     df_tmp = df_tmp[ori_col]
+
+        df_tmp = df_tmp.rename(columns = {"cv.R2": f"cv.R2_pop{i+1}",
+                                          "cv.R2.pval": f"cv.R2.pval_pop{i+1}",
+                                          "inference": f"inference_pop{i+1}",
+                                          "twas_z": f"twas_z_pop{i+1}",
+                                          "inter_z": f"inter_z_pop{i+1}",
+                                          "pips": f"pips_pop{i+1}"})
+        df_tmp[f"ldregion_pop{i+1}"] = region[i]
         if i == 0:
             df = df_tmp
         else:
             if len(df) == len(df_tmp):
-                df = pd.merge(df, df_tmp, how = "left", left_on=common_column, right_on=common_column)
+                df = pd.merge(df, df_tmp, how = "left", on = join_col)
             else:
                 raise ValueError(f"Cannot column binds output due to different rows for populations.")
                 return None
-
+    # re-arrange twas_z pips
     for i in range(n_pop):
-        df[f"twas_z_pop{i+1}"] = zscores[i]
-        df[f"pip_pop{i+1}"] = pips[i]
-        df[f"in_cred_set_pop{i+1}"] = 0
-        df[f"region_pop{i+1}"] = region[i]
-        if i == (n_pop - 1) and i > 0:
-            df[f"pip_me"] = pips[i+1]
-            df[f"in_cred_set_me"] = 0
+        tmp1 = df.pop(f"twas_z_pop{i+1}")
+        tmp2 = df.pop(f"pips_pop{i+1}")
+        df.insert(len(df.columns), f"twas_z_pop{i+1}", tmp1)
+        df.insert(len(df.columns), f"pips_pop{i+1}", tmp2)
+
+    # rearrange pips_me to the last rows
+    if n_pop > 1:
+        pips_me = df.pop("pips_me")
+        df.insert(len(df.columns), "pips_me", pips_me)
+
+    # attention to rows index of pip
+    # for i in range(n_pop):
+    #     df[f"twas_z_pop{i+1}"] = zscores[i]
+    #     df[f"pip_pop{i+1}"] = pips[i]
+    #     df[f"in_cred_set_pop{i+1}"] = 0
+    #     df[f"region_pop{i+1}"] = region[i]
+    #     if i == (n_pop - 1) and i > 0:
+    #         df[f"pip_me"] = pips[i+1]
+    #         df[f"in_cred_set_me"] = 0
 
     # sort by tx start site and we're good to go
     df = df.sort_values(by="tx_start")
@@ -173,8 +202,9 @@ def me_create_output(meta_data, attr, zscores, pips, null_res, region):
     df.columns.values[np.where(df.columns.str.contains("chrom"))] = "chrom"
 
     # drop model-id
-    idx = [c for c in df.columns if "model_id" not in c]
-    df = df[idx]
+    # idx = [c for c in df.columns if "model_id" not in c]
+    # df = df[idx]
+    df.pop("model_id")
 
     # add null model result
     null_dict = dict()
@@ -184,13 +214,14 @@ def me_create_output(meta_data, attr, zscores, pips, null_res, region):
     null_dict["ens_gene_id"] = "NULL.MODEL"
     null_dict["mol_name"] = "NULL"
     null_dict["type"] = "NULL"
-    null_dict["twas_z"] = 0
     null_dict["chrom"] = df["chrom"].values[0]
+
     for i in range(n_pop):
-        null_dict[f"pip_pop{i+1}"] = null_res[i]
-        null_dict[f"region_pop{i+1}"] = region[i]
+        null_dict[f"twas_z_pop{i+1}"] = 0
+        null_dict[f"pips_pop{i+1}"] = null_res[i]
+        null_dict[f"ldregion_pop{i+1}"] = region[i]
         if i == (n_pop - 1) and i > 0:
-            null_dict["pip_me"] = null_res[i+1]
+            null_dict["pips_me"] = null_res[i+1]
 
     df = df.append(null_dict, ignore_index=True)
 
@@ -212,7 +243,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     # align gwas with ref snps
     merged_snps = ref_geno.overlap_gwas(gwas)
     if len(merged_snps) == 0:
-        log.info("No overlap between LD reference and GWAS")
+        log.info("No overlap between LD reference and GWAS.")
         return None
 
     ref_snps = merged_snps.loc[~pd.isna(merged_snps.i)]
@@ -224,7 +255,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
                                      ref_snps[pf.LDRefPanel.A2COL])
     n_miss = sum(np.logical_not(matched))
     if n_miss > 0:
-        log.debug("Pruned {} SNPs due to invalid allele pairs between GWAS/RefPanel.".format(n_miss))
+        log.debug(f"Pruned {n_miss} SNPs due to invalid allele pairs between GWAS/RefPanel.")
 
     ref_snps = ref_snps.loc[matched]
 
@@ -239,7 +270,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     idxs = []
     final_df = None
     for eid, model in wcollection.groupby(["ens_gene_id", "tissue", "inference", "ref_name"]):
-        log.debug("Aligning weights for gene {}".format(eid))
+        log.debug(f"Aligning weights for gene {eid}.")
 
         # merge local model with the reference panel
         # effect_allele alt_allele effect
@@ -252,7 +283,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
 
         n_miss = sum(np.logical_not(m_matched))
         if n_miss > 0:
-            log.debug("Gene {} pruned {} SNPs due to invalid allele pairs between weight-db/GWAS.".format(eid, n_miss))
+            log.debug(f"Gene {eid} pruned {n_miss} SNPs due to invalid allele pairs between weight-db/GWAS.")
 
         m_merged = m_merged.loc[m_matched]
 
@@ -265,12 +296,12 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
 
         # skip genes whose overlapping weights are all 0s
         if len(m_merged) > 1 and all(np.isclose(m_merged["effect"], 0)):
-            log.debug("Gene {} has only zero-weights. This will break variance estimate. Skipping.".format(eid))
+            log.debug(f"Gene {eid} has only zero-weights. This will break variance estimate. Skipping.")
             continue
 
         # skip genes that do not have weights at referenced SNPs
         if all(pd.isnull(m_merged["effect"])):
-            log.debug("Gene {} has no overlapping weights. Skipping.".format(eid))
+            log.debug(f"Gene {eid} has no overlapping weights. Skipping.")
             continue
 
         # keep model_id around to grab other attributes (pred-R2, etc) later on
@@ -280,10 +311,10 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
         # perform a union (outer merge) to build the aligned/flipped weight (possibly jagged) matrix
         if final_df is None:
             final_df = m_merged[[pf.GWAS.SNPCOL, "effect"]]
-            final_df = final_df.rename(index=str, columns={"effect": "model_{}".format(cur_idx)})
+            final_df = final_df.rename(index=str, columns={"effect": f"model_{cur_idx}"})
         else:
             final_df = pd.merge(final_df, m_merged[[pf.GWAS.SNPCOL, "effect"]], how="outer", on="SNP")
-            final_df = final_df.rename(index=str, columns={"effect": "model_{}".format(cur_idx)})
+            final_df = final_df.rename(index=str, columns={"effect": f"model_{cur_idx}"})
 
     # break out early
     if len(idxs) == 0:
@@ -294,7 +325,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     ref_snps = pd.merge(ref_snps, final_df, how="inner", on=pf.GWAS.SNPCOL)
 
     # compute linkage-disequilibrium estimate
-    log.debug("Estimating LD for {} SNPs".format(len(ref_snps)))
+    log.debug(f"Estimating LD for {len(ref_snps)} SNPs.")
     ldmat = ref_geno.estimate_ld(ref_snps, adjust=ridge)
 
     # subset down to just actual GWAS data
@@ -592,20 +623,25 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
         df = add_credible_set(df, credible_set=credible_level)
         return df
 
-def calculate_pips(zscores, wmat, ldmat, max_genes, prior_prob, intercept):
+def calculate_pips(meta_data, wmat, ldmat, max_genes, prior_prob, intercept):
     log = logging.getLogger(pf.LOG)
 
-    n_pop = len(zscores)
+    n_pop = len(meta_data)
     # Calculate prior chisq
     # TODO replace PINV with solve
 
     prior_chisq = [None] * n_pop
+    # import pdb; pdb.set_trace()
     for i in range(n_pop):
         wcor, swld = estimate_cor(wmat[i], ldmat[i], intercept = False)
-        prior_chisq[i] = mdot([zscores[i], lin.pinv(wcor), zscores[i]])
+        solution, resid, rank_wcor, svs = lin.lstsq(wcor, np.asarray(meta_data[i]["twas_z"]))
+        prior_chisq[i] = np.dot(np.asarray(meta_data[i]["twas_z"]), solution)
+        # super close to 14th digit
+        #wcor, swld = estimate_cor(wmat[i], ldmat[i], intercept = False)
+        #prior_chisq[i] = mdot([meta_data[i]["twas_z"].tolist(), lin.pinv(wcor), meta_data[i]["twas_z"].tolist()])
 
     # perform fine-mapping
-    log.debug("Estimating local TWAS correlation structure")
+    log.debug("Estimating local TWAS correlation structure.")
     wcor = [None] * n_pop
     swld = [None] * n_pop
     for i in range(n_pop):
@@ -614,17 +650,15 @@ def calculate_pips(zscores, wmat, ldmat, max_genes, prior_prob, intercept):
         swld[i] = swld_tmp
 
     # check if we need to me-focus
-    if n_pop == 1:
-        pips = [None]
-        null_res = [None]
-    else:
-        pips = [None] * (n_pop + 1)
-        null_res = [None] * (n_pop + 1)
-
-    m = len(zscores[0])
+    # if n_pop == 1:
+    #     null_res = [None]
+    # else:
+    #     null_res = [None] * (n_pop + 1)
+    null_res = [None] if n_pop == 1 else [None] * (n_pop + 1)
+    m = len(meta_data[0])
     rm = range(m)
     k = m if max_genes > m else max_genes
-    for i in range(len(pips)):
+    for i in range(1 if n_pop == 1 else n_pop+1):
         pips_tmp = np.zeros(m)
         null_res_tmp = m * np.log(1 - prior_prob)
         marginal = null_res_tmp
@@ -634,13 +668,13 @@ def calculate_pips(zscores, wmat, ldmat, max_genes, prior_prob, intercept):
             # if it's the case, we need to do Multi-Ethnic Fine-mapping
             if i == (len(pips)-1) and i > 0:
                 for j in range(n_pop):
-                    local_bf, local_prior = me_bayes_factor(zscores[j], subset, wcor[j], prior_chisq[j], prior_prob)
+                    local_bf, local_prior = me_bayes_factor(np.asarray(meta_data[j]["twas_z"]), subset, wcor[j], prior_chisq[j], prior_prob)
                     if j == 0:
                         local += local_bf + local_prior
                     else:
                         local += local_bf
             else:
-                local_bf, local_prior = me_bayes_factor(zscores[i], subset, wcor[i], prior_chisq[i], prior_prob)
+                local_bf, local_prior = me_bayes_factor(np.asarray(meta_data[i]["twas_z"]), subset, wcor[i], prior_chisq[i], prior_prob)
                 local = local_bf + local_prior
 
             # keep track for marginal likelihood
@@ -656,22 +690,14 @@ def calculate_pips(zscores, wmat, ldmat, max_genes, prior_prob, intercept):
         pips_tmp = np.exp(pips_tmp - marginal)
         null_res_tmp = np.exp(null_res_tmp - marginal)
 
-        pips[i] = pips_tmp
+        if i == (len(pips)-1) and i > 0:
+            # store the me pips into first pop's metadata
+            meta_data[0].insert(len(meta_data[0].columns), "pips_me", pips_tmp)
+        else:
+            meta_data[i].insert(len(meta_data[i].columns), "pips", pips_tmp)
         null_res[i] = null_res_tmp
 
-    # sanity check
-    if len(pips) == 1:
-        if len(zscores) == 1 and len(zscores) == len(wmat) and len(null_res) == len(pips):
-            return pips, null_res
-        else:
-            raise ValueError("Generated PIPs, null_res, Zscores, and Weight matrix have different length.")
-            return None, None
-    else:
-        if len(zscores) == (len(pips)-1) and len(zscores) == len(wmat) and len(null_res) == len(pips):
-            return pips, null_res
-        else:
-            raise ValueError("Generated PIPs, null_res, Zscores, and Weight matrix have different length.")
-            return None, None
+    return meta_data, null_res
 
 def num_convert(i):
     nth = {1: "1st",
@@ -683,8 +709,8 @@ def num_convert(i):
 
     return nth[i]
 
-def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, max_genes=3, ridge=0.1, prior_prob=1e-3,
-             credible_level=0.9, plot=False):
+def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogeneity=False,
+            max_genes=3, ridge=0.1, prior_prob=1e-3, credible_level=0.9, plot=False):
     """
     Perform a TWAS and fine-map the results.
 
@@ -704,7 +730,7 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
         (pandas.DataFrame, list of plot-objects) if plot=True
     """
     log = logging.getLogger(pf.LOG)
-    log.info(f"Starting fine-mapping at region {ref_geno[0]}")
+    log.info(f"Starting fine-mapping at region {block}")
 
     # align all GWAS, LD reference, and overlapping molecular weights
     n_pop = len(gwas)
@@ -715,7 +741,7 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
     ldmat = [None] * n_pop
     # import pdb; pdb.set_trace()
     for i in range(n_pop):
-        log.info(f"Aligning GWAS, LD, and eQTL weights for {num_convert(i+1)} population. It will skill this region if following errors occur.")
+        log.info(f"Aligning GWAS, LD, and eQTL weights for {num_convert(i+1)} population. It will skip this region if following errors occur.")
         parameters_tmp = align_data(gwas_copy[i], ref_geno[i], wcollection[i], ridge=ridge)
         if parameters_tmp is None:
             # break; logging of specific reason should be in align_data
@@ -723,24 +749,30 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
         else:
             gwas[i], wmat[i], meta_data[i], ldmat[i] = parameters_tmp
 
-    # Get common genes across populations
-    # Tissue
-
-    gene_set = np.array(meta_data[0]["ens_gene_id"])
+    # Get common genes-tissue pair across populations
+    # assume to use ens_gene_id, tissue, and model_id to be identifier
+    gene_identifier = ["ens_gene_id", "tissue", "model_id"]
+    gene_set = meta_data[0][gene_identifier]
     for i in range(n_pop - 1):
-        gene_set = np.intersect1d(gene_set, np.array(meta_data[i + 1]["ens_gene_id"]))
+        gene_set = pd.merge(gene_set, meta_data[i+1][gene_identifier], how = "inner")
 
     if len(gene_set) == 0:
-        log.warning(f"No common genes found at region {ref_geno[0]}. Skipping.")
+        log.warning(f"No common genes found at region {block}. Skipping.")
         return
+    else:
+        log.info(f"Find {len(gene_set)} common genes to be fine-mapped at region {block}.")
 
+    # foo columns to get the index
+    gene_set["foo"] = "foo"
     for i in range(n_pop):
-        idx = meta_data[i].index[meta_data[i]["ens_gene_id"].isin(gene_set)].tolist()
+        df_tmp = pd.merge(meta_data[i], gene_set, how = "left", on = gene_identifier)
+        idx = df_tmp[pd.notna(df_tmp.foo)].index
         wmat[i] = wmat[i].T[idx].T
         meta_data[i] = meta_data[i].iloc[idx, :]
 
     # run local TWAS
-    zscores = [None] * n_pop
+    # zscores = [None] * n_pop
+    # import pdb; pdb.set_trace()
     for i in range(n_pop):
         log.info(f"Running TWAS for {num_convert(i + 1)} population.")
         zscores_tmp = []
@@ -748,21 +780,24 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
             log.debug(f"Computing TWAS association statistic for gene {meta_data[i].iloc[idx]['ens_gene_id']}.")
             beta, se = assoc_test(weights, gwas[i], ldmat[i], heterogeneity)
             zscores_tmp.append(beta / se)
-        zscores[i] = np.array(zscores_tmp)
+        meta_data[i].insert(len(meta_data[i].columns), "twas_z", zscores_tmp)
+        #zscores[i] = np.array(zscores_tmp)
 
-    inter_z = [None] * n_pop
+    # inter_z = [None] * n_pop
     for i in range(n_pop):
         if intercept:
             # should really be done at the SNP level first ala Barfield et al 2018
             log.debug(f"Regressing out average tagged pleiotropic associations for {num_convert(i + 1)} population")
-            zscores[i], inter_z[i] = get_resid(zscores[i], swld[i], wcor[i])
+            twas_z_tmp, inter_z_tmp = get_resid(zscores[i], swld[i], wcor[i])
+            meta_data[i].insert(len(meta_data[i].columns), "twas_z", twas_z_tmp)
+            meta_data[i].insert(len(meta_data[i].columns), "inter_z", inter_z_tmp)
         else:
-            inter_z[i] = None
+            meta_data[i].insert(len(meta_data[i].columns), "inter_z", None)
 
     # calculate pips for single pop, and me.
     log.info(f"Calculating PIPs.")
-
-    pips, null_res = calculate_pips(zscores, wmat, ldmat, max_genes, prior_prob, intercept)
+    # import pdb; pdb.set_trace()
+    meta_data, null_res = calculate_pips(meta_data, wmat, ldmat, max_genes, prior_prob, intercept)
 
     # Query the db to grab model attributes
     # We might want to filter to only certain attributes at some point
@@ -784,11 +819,14 @@ def me_fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=Fals
 
     # dont sort here to make plotting easier
 
-    df = me_create_output(meta_data, attr, zscores, pips, null_res, region)
+    df = me_create_output(meta_data, attr, null_res, region)
 
-    log.info(f"Completed fine-mapping at region {ref_geno[0]}.")
+    # Output the partition blocks in which focus performs
+    df.insert(0, "block", block)
+
+    log.info(f"Completed fine-mapping at region {block}.")
     if plot:
-        log.info(f"Creating FOCUS plots at region {ref_geno[0]}.")
+        log.info(f"Creating FOCUS plots at region {block}.")
         plot_arr = pf.focus_plot(wcor, df)
 
         # sort here and create credible set

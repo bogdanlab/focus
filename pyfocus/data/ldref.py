@@ -9,13 +9,20 @@ import scipy.linalg as lin
 
 from pandas_plink import read_plink
 
-dft_location = {"EUR": "ld_blocks/grch37.eur.loci.bed",
-"AFR": "ld_blocks/grch37.afr.loci.bed",
-"EAS": "ld_blocks/grch37.eas.loci.bed",
-"EUR-AFR": "ld_blocks/eur.afr.loci.bed",
-"EUR-EAS": "ld_blocks/eur.eas.loci.bed",
-"EAS-AFR": "ld_blocks/eas.afr.loci.bed",
-"EUR-EAS-AFR": "ld_blocks/eur.eas.afr.loci.bed"}
+dft_location = {"37:EUR": "ld_blocks/grch37.eur.loci.bed",
+"37:AFR": "ld_blocks/grch37.afr.loci.bed",
+"37:EAS": "ld_blocks/grch37.eas.loci.bed",
+"37:EUR-AFR": "ld_blocks/grch37.eur.afr.loci.bed",
+"37:EUR-EAS": "ld_blocks/grch37.eur.eas.loci.bed",
+"37:EAS-AFR": "ld_blocks/grch37.eas.afr.loci.bed",
+"37:EUR-EAS-AFR": "ld_blocks/grch37.eur.eas.afr.loci.bed",
+"38:EUR": "ld_blocks/grch38.eur.loci.bed",
+"38:AFR": "ld_blocks/grch38.afr.loci.bed",
+"38:EAS": "ld_blocks/grch38.eas.loci.bed",
+"38:EUR-AFR": "ld_blocks/grch38.eur.afr.loci.bed",
+"38:EUR-EAS": "ld_blocks/grch38.eur.eas.loci.bed",
+"38:EAS-AFR": "ld_blocks/grch38.eas.afr.loci.bed",
+"38:EUR-EAS-AFR": "ld_blocks/grch38.eur.eas.afr.loci.bed"}
 
 class IndBlocks(object):
     """
@@ -30,7 +37,7 @@ class IndBlocks(object):
 
     def __init__(self, regions=None):
         if regions is None:
-            raise ValueError("Please specify independent regions location or default regions with 'EUR', etc.")
+            raise ValueError("Please specify independent regions location or default regions with '37:EUR', etc.")
         else:
             if type(regions) is str:
                 try:

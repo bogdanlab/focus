@@ -14,7 +14,7 @@ COUNT = 250
 
 def import_fusion(path, name, tissue, assay, use_ens_id, from_gencode, session):
     """
-    Import weights from a PrediXcan db into the FOCUS db.
+    Import weights from a FUSION Rdata into the FOCUS db.
 
     :param path:  string path to the PrediXcan db
     :param tissue: str name of the tissue
@@ -63,6 +63,7 @@ def import_fusion(path, name, tissue, assay, use_ens_id, from_gencode, session):
         genes = fusion_db.ID.values
 
     # we need to do batch queries in order to not get throttled by the mygene servers
+    import pdb; pdb.set_trace()
     log.info("Querying mygene servers for gene annotations")
     if use_ens_id:
         results = mg.querymany(genes, scopes="ensembl.gene", verbose=False,
@@ -80,14 +81,14 @@ def import_fusion(path, name, tissue, assay, use_ens_id, from_gencode, session):
     count = 0
     log.info("Starting individual model conversion")
     for rdx, row in fusion_db.iterrows():
-        wgt_name, g_name, chrom, txstart, txstop = row.WGT, row.ID, row.CHR, row.P0, row.P1
+        wgt_dir, wgt_name, g_name, chrom, txstart, txstop = row.DIR, row.WGT, row.ID, row.CHR, row.P0, row.P1
 
         # METSIM.ADIPOSE.RNASEQ/METSIM.LINC00115.wgt.RDat LINC00115 1 761586 762902
         log.debug("Importing {} model".format(wgt_name))
 
         # this call should create the following:
         # 'wgt.matrix', 'snps', 'cv.performance', 'hsq', and 'hsq.pv'
-        wgt_path = "{}/{}".format(local_dir, wgt_name)
+        wgt_path = "{}/{}".format(wgt_dir, wgt_name)
 
         # load the Rdat data
         load_func(wgt_path)

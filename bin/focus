@@ -962,7 +962,8 @@ def run_me_twas(args):
             written = False
             for region in partitions:
                 chrom, start, stop = region
-                log.info(f"finemap regions on {chrom}:{int(start)} - {chrom}:{int(stop)}.")
+                block = f"{chrom}:{int(start)}-{chrom}:{int(stop)}"
+                log.info(f"finemap regions on {block}.")
                 # grab local GWAS data
                 local_gwas = [None] * n_pop
                 skip = False
@@ -972,13 +973,13 @@ def run_me_twas(args):
                     local_gwas_tmp = gwas[i].subset_by_pos(chrom, start=start, stop=stop)
                     # only fine-map regions that contain GWAS data
                     if len(local_gwas_tmp) == 0:
-                        log.warning(f"No GWAS data found found at {chrom}:{int(start)} - {chrom}:{int(stop)} at {df_paths[i]}. Skipping.")
+                        log.warning(f"No GWAS data found found at {block} at {df_paths[i]}. Skipping.")
                         skip = True
                         break
 
                     # only fine-map regions that contain GWAS signal
                     if min(local_gwas_tmp.P) >= args.p_threshold:
-                        log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at {chrom}:{int(start)} - {chrom}:{int(stop)} at {df_paths[i]}.")
+                        log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at {block} at {df_paths[i]}.")
                         ct += 1
                     local_gwas[i] = local_gwas_tmp
 
@@ -986,11 +987,11 @@ def run_me_twas(args):
                     continue
 
                 if ct == n_pop:
-                    log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at {chrom}:{int(start)} - {chrom}:{int(stop)} for all popluations. Skipping.")
+                    log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at {block} for all popluations. Skipping.")
                     continue
                 elif ct != 0:
                     if bool(args.all_gwas_sig):
-                        log.warning(f"At least one popluation has no GWAS SNPs with p-value < {args.p_threshold} found at {chrom}:{int(start)} - {chrom}:{int(stop)} while all_gwas_sig parameter is specified True. Skipping.")
+                        log.warning(f"At least one popluation has no GWAS SNPs with p-value < {args.p_threshold} found at {block} while all_gwas_sig parameter is specified True. Skipping.")
                         continue
 
                 # grab local reference genotype data
@@ -998,7 +999,7 @@ def run_me_twas(args):
                 for i in range(n_pop):
                     local_ref_tmp = ref[i].subset_by_pos(chrom, start=start, stop=stop)
                     if len(local_ref_tmp) == 0:
-                        log.warning(f"No reference LD SNPs found at {chrom}:{int(start)} - {chrom}:{int(stop)} at {df_refs[i]}. Skipping")
+                        log.warning(f"No reference LD SNPs found at {block} at {df_refs[i]}. Skipping")
                         skip = True
                         break
                     local_ref[i] = local_ref_tmp
@@ -1042,7 +1043,7 @@ def run_me_twas(args):
                                                                metric="cv.R2", strict=args.strict_tissue)
 
                 # fine-map, my dudes
-                result = pyfocus.me_fine_map(local_gwas, snp_weights, local_ref, intercept=args.intercept,
+                result = pyfocus.me_fine_map(local_gwas, snp_weights, local_ref, block, intercept=args.intercept,
                                           max_genes=args.max_genes, ridge=args.ridge_term, prior_prob=args.prior_prob,
                                           credible_level=args.credible_level, plot=args.plot)
 
@@ -1374,11 +1375,7 @@ def build_mefocus_parser(subp):
     mefmp.add_argument("--stop", default=None,
                       help="Perform imputation until at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
     mefmp.add_argument("--locations", default=None,
-        #type=argparse.FileType("r"),
-                      help="Path to a BED file containing windows (e.g., CHR START STOP) to fine-map over." +
-                           "Start and stop values may contain kb/mb modifiers." +
-                           "Or use default independent regions by specifying 'EUR', 'AFR', 'EAS', " +
-                           "'EUR-AFR', 'EUR-EAS', 'EAS-AFR', 'EUR-EAS-AFR'.")
+                      help="Path to a BED file containing windows (e.g., CHR START STOP) to fine-map over. Start and stop values may contain kb/mb modifiers. Or use default independent regions by specifying '37:EUR', '37:AFR', '37:EAS', '37:EUR-AFR', '37:EUR-EAS', '37:EAS-AFR', '37:EUR-EAS-AFR', or '38:'-prefix regions.")
 
     # fine-map general options
     mefmp.add_argument("--all-gwas-sig", default=False,
