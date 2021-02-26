@@ -874,16 +874,16 @@ def run_me_twas(args):
         chrom, start_bp, stop_bp = region_sanity_check(args.chr, args.start, args.stop)
 
         # load GWAS summary data for each population
-        log.info("Preparing GWAS summary data.")
+        # log.info("Preparing GWAS summary data.")
 
         df_paths = args.gwas.split(":")
         n_pop = len(df_paths)
         log.info(f"Detecting {n_pop} populations for fine-mapping.")
 
         if n_pop > 1:
-            log.info("As a result, running single population FOCUS on each population, and then ME-FOCUS on all populations.")
+            log.info("As a result, running single-population FOCUS on each population, and then Multi-Ethnic FOCUS across all populations.")
         else:
-            log.info("As a result, running single population FOCUS.")
+            log.info("As a result, running single-population FOCUS.")
 
         gwas = [None] * n_pop
         for i in range(n_pop):
@@ -903,13 +903,11 @@ def run_me_twas(args):
                     raise ValueError(err_str)
 
         # load reference genotype data for each population
-        log.info("Preparing reference SNP data.")
+        # log.info("Preparing reference SNP data.")
         df_refs = args.ref.split(":")
 
         if len(df_refs) != n_pop:
             raise Exception("The number of LD refernece panel is different from the number of GWAS data.")
-        else:
-            log.info("The number of LD reference panel is equal to the number of GWAS data.")
 
         ref = [None] * n_pop
         for i in range(n_pop):
@@ -927,7 +925,7 @@ def run_me_twas(args):
                     err_str = f"No reference LD SNPs found at chromosome {chrom} at {df_refs[i]}."
                     raise Exception(err_str)
 
-        log.info("Preparing weight database.")
+        # log.info("Preparing weight database.")
         # not the best approach, but load_db creates an empty db if the file does not exist
         # so check here that we actually -have- some db
         df_dbs = args.weights.split(":")
@@ -941,7 +939,8 @@ def run_me_twas(args):
                 raise ValueError(f"Cannot find database at {df_dbs[i]}.")
 
         for i in range(n_pop):
-            session[i] = pyfocus.load_db(df_dbs[i], i)
+            log.info(f"Preparing weight database at {df_dbs[i]}.")
+            session[i] = pyfocus.load_db(df_dbs[i], idx = i)
 
         # alias
         Weight = pyfocus.Weight
@@ -950,20 +949,20 @@ def run_me_twas(args):
         RefPanel = pyfocus.RefPanel
 
         with open("{}.focus.tsv".format(args.output), "w") as output:
-            log.info("Preparing user-defined locations.")
+            log.info(f"Preparing user-defined locations at {args.locations}.")
 
             partitions = pyfocus.IndBlocks(args.locations)
-            log.info(f"{partitions.show_nrow()} independent regions currently used.")
+            log.info(f"Found {partitions.show_nrow()} independent regions on the entire genome.")
 
             if chrom is not None:
                 partitions = partitions.subset_by_pos(chrom, start_bp, stop_bp)
-                log.info(f"{partitions.show_nrow()} independent regions currently used after filtering on chromosome, start, and stop.")
+                log.info(f"{partitions.show_nrow()} independent regions currently used after being filtered on chromosome, start, and stop.")
 
             written = False
             for region in partitions:
                 chrom, start, stop = region
                 block = f"{chrom}:{int(start)}-{chrom}:{int(stop)}"
-                log.info(f"finemap regions on {block}.")
+                log.info(f"Preparing data at region {block}. Skipping if following warning occurs.")
                 # grab local GWAS data
                 local_gwas = [None] * n_pop
                 skip = False
@@ -973,33 +972,35 @@ def run_me_twas(args):
                     local_gwas_tmp = gwas[i].subset_by_pos(chrom, start=start, stop=stop)
                     # only fine-map regions that contain GWAS data
                     if len(local_gwas_tmp) == 0:
-                        log.warning(f"No GWAS data found found at {block} at {df_paths[i]}. Skipping.")
+                        log.warning(f"No GWAS data found found at region {block} at {df_paths[i]}. Skipping.")
                         skip = True
                         break
 
                     # only fine-map regions that contain GWAS signal
                     if min(local_gwas_tmp.P) >= args.p_threshold:
-                        log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at {block} at {df_paths[i]}.")
+                        log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at region {block} at {df_paths[i]}.")
                         ct += 1
                     local_gwas[i] = local_gwas_tmp
 
                 if skip:
                     continue
 
-                if ct == n_pop:
-                    log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at {block} for all popluations. Skipping.")
+                if ct == n_pop and n_pop == 1:
+                    # Make sure no duplicated warnings for single pop
                     continue
-                elif ct != 0:
-                    if bool(args.all_gwas_sig):
-                        log.warning(f"At least one popluation has no GWAS SNPs with p-value < {args.p_threshold} found at {block} while all_gwas_sig parameter is specified True. Skipping.")
-                        continue
+                elif ct == n_pop:
+                    log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at region {block} for all popluations. Skipping.")
+                    continue
+                elif ct != 0 and bool(args.all_gwas_sig):
+                    log.warning(f"At least one popluation (n={ct} out of {n_pop}) has no GWAS SNPs with p-value < {args.p_threshold} found at region {block} while all_gwas_sig parameter is specified True. Skipping.")
+                    continue
 
                 # grab local reference genotype data
                 local_ref = [None] * n_pop
                 for i in range(n_pop):
                     local_ref_tmp = ref[i].subset_by_pos(chrom, start=start, stop=stop)
                     if len(local_ref_tmp) == 0:
-                        log.warning(f"No reference LD SNPs found at {block} at {df_refs[i]}. Skipping")
+                        log.warning(f"No reference LD SNPs found at region {block} at {df_refs[i]}. Skipping")
                         skip = True
                         break
                     local_ref[i] = local_ref_tmp
@@ -1029,7 +1030,7 @@ def run_me_twas(args):
                         snp_weights_tmp = pd.concat(snp_weights_tmp, ignore_index=True)
                         # if there are no SNPs found in this region or none of the SNPs overlap the GWAS skip it
                         if len(snp_weights_tmp) == 0:
-                            log.warning(f"No overlapping weights at {chrom}:{int(start)} - {chrom}:{int(stop)} at {df_dbs[i]}. Skipping")
+                            log.warning(f"No overlapping weights at region {block} at {df_dbs[i]}. Skipping")
                             skip = True
                             break
                         snp_weights[i] = snp_weights_tmp
@@ -1168,7 +1169,7 @@ def build_weights(args):
         ref_panel.parse_gene_info(args.info)
 
         log.info("Preparing weight database")
-        session = pyfocus.load_db("{}.db".format(args.output))
+        session = pyfocus.load_db(f"{args.output}.db")
 
         db_ref_panel = pyfocus.RefPanel(
             ref_name=args.name,
@@ -1181,7 +1182,7 @@ def build_weights(args):
             y, X, G, snp_info, gene_info = train_data
 
             # fit predictive model using specified method
-            log.info("Performing {} model inference".format(gene_info["geneid"]))
+            log.info(f"Performing {gene_info["geneid"]} model inference")
             result = pyfocus.train_model(y, X, G, args.method, args.include_ses, args.p_threshold)
 
             if result is None:
@@ -1211,7 +1212,7 @@ def import_weights(args):
     log = logging.getLogger(pyfocus.LOG)
     try:
         log.info("Preparing weight database")
-        session = pyfocus.load_db("{}.db".format(args.output))
+        session = pyfocus.load_db(f"{args.output}.db")
 
         if args.type == "predixcan":
             pyfocus.import_predixcan(args.path, args.name, args.tissue, args.assay, args.predixcan_method, session)
@@ -1554,7 +1555,7 @@ def main(argsv):
         log.addHandler(stdout_handler)
 
     # setup log file, but write PLINK-style command first
-    disk_log_stream = open("{}.log".format(args.output), "w")
+    disk_log_stream = open(f"{args.output}.log", "w")
     disk_log_stream.write(masthead)
     disk_log_stream.write(cmd_str)
     disk_log_stream.write("Starting log..." + os.linesep)

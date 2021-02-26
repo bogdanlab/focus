@@ -16,14 +16,13 @@ def set_session(ssn):
     return
 
 
-def get_session(idx):
+def get_session(idx=-1):
     global session
     log = logging.getLogger(pf.LOG)
-    log.info(f"Getting Session for {pf.num_convert(idx+1)} population.")
     return session[idx]
 
 
-def load_db(path, idx):
+def load_db(path, idx=-1):
     # create engine, and ensure that tables exist
     engine = create_engine(f"sqlite:///{path}")
     Base.metadata.create_all(engine)

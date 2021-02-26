@@ -69,7 +69,7 @@ class IndBlocks(object):
 
         df = self._regions.loc[self._regions[IndBlocks.CHRCOL] == chrom]
         if len(df) == 0:
-            raise ValueError("No independent blocks found on chromosome {}".format(chrom))
+            raise ValueError(f"No independent blocks found on chromosome {chrom}")
 
         if stop is None:
             stop = max(df[IndBlocks.STOPCOL])
@@ -80,7 +80,7 @@ class IndBlocks(object):
         locs = df.loc[df.apply(lambda x: min(x[IndBlocks.STOPCOL], stop) - max(x[IndBlocks.STARTCOL], start), axis=1) > 0]
 
         if len(locs) == 0:
-            raise ValueError("No independent blocks found at region {}{}-{}".format(chrom, start, stop))
+            raise ValueError(f"No independent blocks found at region {chrom}{start}-{stop}")
 
         return IndBlocks(locs)
 
@@ -106,8 +106,8 @@ class LDRefPanel(object):
     def __init__(self, snp_info, sample_info, geno):
         self._snp_info = snp_info
         if len(snp_info) > 0 and pd.api.types.is_categorical_dtype(self._snp_info[LDRefPanel.A1COL]):
-            self._snp_info.loc[:, LDRefPanel.A1COL] = self._snp_info[LDRefPanel.A1COL].astype('str')
-            self._snp_info.loc[:, LDRefPanel.A2COL] = self._snp_info[LDRefPanel.A2COL].astype('str')
+            self._snp_info.loc[:, LDRefPanel.A1COL] = self._snp_info[LDRefPanel.A1COL].astype("str")
+            self._snp_info.loc[:, LDRefPanel.A2COL] = self._snp_info[LDRefPanel.A2COL].astype("str")
         self._sample_info = sample_info
         self._geno = geno
         return
@@ -121,7 +121,7 @@ class LDRefPanel(object):
 
         start_bp = self._snp_info[LDRefPanel.BPCOL].iloc[0]
         stop_bp = self._snp_info[LDRefPanel.BPCOL].iloc[-1]
-        return "{}:{} - {}:{}".format(start_chr, int(start_bp), stop_chr, int(stop_bp))
+        return f"{start_chr}:{int(start_bp)} - {stop_chr}:{int(stop_bp)}"
 
     def subset_by_pos(self, chrom, start=None, stop=None, clean_snps=True):
         df = self._snp_info
@@ -181,6 +181,6 @@ class LDRefPanel(object):
     @classmethod
     def parse_plink(cls, path):
         with np.warnings.catch_warnings():
-            np.warnings.filterwarnings('ignore', 'FutureWarning')
+            np.warnings.filterwarnings("ignore", "FutureWarning")
             bim, fam, bed = read_plink(path, verbose=False)
         return LDRefPanel(bim, fam, bed)

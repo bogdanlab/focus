@@ -44,7 +44,7 @@ def import_fusion(path, name, tissue, assay, use_ens_id, from_gencode, session):
         log.error("Import submodule requires mygene and rpy2 to be installed.")
         raise
 
-    log.info("Starting import from FUSION database {}".format(path))
+    log.info(f"Starting import from FUSION database {path}")
     db_ref_panel = pf.RefPanel(ref_name=name, tissue=tissue, assay=assay)
     ses = None
 
@@ -63,7 +63,7 @@ def import_fusion(path, name, tissue, assay, use_ens_id, from_gencode, session):
         genes = fusion_db.ID.values
 
     # we need to do batch queries in order to not get throttled by the mygene servers
-    import pdb; pdb.set_trace()
+    
     log.info("Querying mygene servers for gene annotations")
     if use_ens_id:
         results = mg.querymany(genes, scopes="ensembl.gene", verbose=False,
@@ -84,11 +84,11 @@ def import_fusion(path, name, tissue, assay, use_ens_id, from_gencode, session):
         wgt_dir, wgt_name, g_name, chrom, txstart, txstop = row.DIR, row.WGT, row.ID, row.CHR, row.P0, row.P1
 
         # METSIM.ADIPOSE.RNASEQ/METSIM.LINC00115.wgt.RDat LINC00115 1 761586 762902
-        log.debug("Importing {} model".format(wgt_name))
+        log.debug(f"Importing {wgt_name} model")
 
         # this call should create the following:
         # 'wgt.matrix', 'snps', 'cv.performance', 'hsq', and 'hsq.pv'
-        wgt_path = "{}/{}".format(wgt_dir, wgt_name)
+        wgt_path = f"{wgt_dir}/{wgt_name}"
 
         # load the Rdat data
         load_func(wgt_path)
@@ -152,9 +152,9 @@ def import_fusion(path, name, tissue, assay, use_ens_id, from_gencode, session):
             # we didn't get any hits from our query
             # just use the gene-name as ens-id...
             if use_ens_id:
-                log.warning("Unable to match {} to Ensembl ID. Using ID for symbol".format(g_name))
+                log.warning(f"Unable to match {g_name} to Ensembl ID. Using ID for symbol")
             else:
-                log.warning("Unable to match {} to Ensembl ID. Using symbol for ID".format(g_name))
+                log.warning(f"Unable to match {g_name} to Ensembl ID. Using symbol for ID")
             gene_info["geneid"] = g_name
             gene_info["type"] = None
 
@@ -169,9 +169,9 @@ def import_fusion(path, name, tissue, assay, use_ens_id, from_gencode, session):
         methods = np.array(robj.r['cv.performance'].colnames)
         types = list(robj.r['cv.performance'].rownames)
         if "rsq" not in types:
-            raise ValueError("No R2 value for model {}".format(path))
+            raise ValueError(f"No R2 value for model {path}")
         if "pval" not in types:
-            raise ValueError("No R2 p-value for model {}".format(path))
+            raise ValueError(f"No R2 p-value for model {path}")
 
         # grab the actual weights
         wgts = np.array(robj.r['wgt.matrix'])
@@ -247,12 +247,12 @@ def import_fusion(path, name, tissue, assay, use_ens_id, from_gencode, session):
             raise Exception("Failed committing to db")
         count += 1
         if count % COUNT == 0:
-            log.info("Committed {} models to db".format(COUNT))
+            log.info(f"Committed {COUNT} models to db")
 
     if count % COUNT != 0:
-        log.info("Committed {} models to db".format(count % COUNT))
+        log.info(f"Committed {count % COUNT} models to db")
 
-    log.info("Finished import from FUSION database {}".format(path))
+    log.info(f"Finished import from FUSION database {path}")
     return
 
 
@@ -289,9 +289,9 @@ def import_predixcan(path, name, tissue, assay, method, session):
         raise
 
     if not os.path.isfile(path):
-        raise ValueError("Cannot find database {}".format(path))
-    log.info("Starting import from PrediXcan database {}".format(path))
-    pred_engine = create_engine("sqlite:///{}".format(path))
+        raise ValueError(f"Cannot find database {path}")
+    log.info(f"Starting import from PrediXcan database {path}")
+    pred_engine = create_engine(f"sqlite:///{path}")
 
     weights = pd.read_sql_table('weights', pred_engine)
     extra = pd.read_sql_table('extra', pred_engine)
@@ -319,7 +319,7 @@ def import_predixcan(path, name, tissue, assay, method, session):
     count = 0
     log.info("Starting individual model conversion")
     for gid, gene in weights.groupby("gene"):
-        log.debug("Importing gene model {}".format(gid))
+        log.debug(f"Importing gene model {gid}")
         gene_extra = extra.loc[extra.gene == gid]
 
         chrom = gene.varID.values[0].split("_")[0]  # grab chromosome from varID
@@ -396,13 +396,13 @@ def import_predixcan(path, name, tissue, assay, method, session):
 
         count += 1
         if count % COUNT == 0:
-            log.info("Committed {} models to db".format(COUNT))
+            log.info(f"Committed {COUNT} models to db")
 
     if count % COUNT != 0:
-        log.info("Committed {} models to db".format(count % COUNT))
+        log.info(f"Committed {count % COUNT} models to db")
 
 
-    log.info("Finished import from PrediXcan database {}".format(path))
+    log.info(f"Finished import from PrediXcan database {path}")
     return
 
 

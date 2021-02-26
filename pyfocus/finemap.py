@@ -169,17 +169,6 @@ def me_create_output(meta_data, attr, null_res, region):
             else:
                 raise ValueError(f"Cannot column binds output due to different rows for populations.")
                 return None
-    # re-arrange twas_z pips
-    for i in range(n_pop):
-        tmp1 = df.pop(f"twas_z_pop{i+1}")
-        tmp2 = df.pop(f"pips_pop{i+1}")
-        df.insert(len(df.columns), f"twas_z_pop{i+1}", tmp1)
-        df.insert(len(df.columns), f"pips_pop{i+1}", tmp2)
-
-    # rearrange pips_me to the last rows
-    if n_pop > 1:
-        pips_me = df.pop("pips_me")
-        df.insert(len(df.columns), "pips_me", pips_me)
 
     # attention to rows index of pip
     # for i in range(n_pop):
@@ -267,6 +256,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
                                              ref_snps[pf.LDRefPanel.A2COL])
 
     # collapse the gene models into a single weight matrix
+
     idxs = []
     final_df = None
     for eid, model in wcollection.groupby(["ens_gene_id", "tissue", "inference", "ref_name"]):
@@ -666,7 +656,7 @@ def calculate_pips(meta_data, wmat, ldmat, max_genes, prior_prob, intercept):
         for subset in chain.from_iterable(combinations(rm, n) for n in range(1, k + 1)):
             local = 0
             # if it's the case, we need to do Multi-Ethnic Fine-mapping
-            if i == (len(pips)-1) and i > 0:
+            if i == (len(null_res)-1) and i > 0:
                 for j in range(n_pop):
                     local_bf, local_prior = me_bayes_factor(np.asarray(meta_data[j]["twas_z"]), subset, wcor[j], prior_chisq[j], prior_prob)
                     if j == 0:
@@ -690,7 +680,7 @@ def calculate_pips(meta_data, wmat, ldmat, max_genes, prior_prob, intercept):
         pips_tmp = np.exp(pips_tmp - marginal)
         null_res_tmp = np.exp(null_res_tmp - marginal)
 
-        if i == (len(pips)-1) and i > 0:
+        if i == (len(null_res)-1) and i > 0:
             # store the me pips into first pop's metadata
             meta_data[0].insert(len(meta_data[0].columns), "pips_me", pips_tmp)
         else:
@@ -708,6 +698,34 @@ def num_convert(i):
     6: "6th"}
 
     return nth[i]
+
+def rearrange_columns(df):
+    # import pdb; pdb.set_trace()
+    n_pop = np.sum(df.columns.str.contains("pips"))
+    n_pop = 1 if n_pop == 1 else n_pop - 1
+    # move non-pop parameters upfront
+    for i in range(n_pop):
+        tmp = df.columns.str.contains(f"pop{i+1}")
+        tmp_name = df.columns.values[~tmp].tolist() + df.columns.values[tmp].tolist()
+        df = df[tmp_name]
+
+    # move twas_z, pips, and credible set in the endswith
+    for i in range(n_pop):
+        tmp1 = df.pop(f"twas_z_pop{i+1}")
+        tmp2 = df.pop(f"pips_pop{i+1}")
+        tmp3 = df.pop(f"in_cred_set_pop{i+1}")
+        df.insert(len(df.columns), f"twas_z_pop{i+1}", tmp1)
+        df.insert(len(df.columns), f"pips_pop{i+1}", tmp2)
+        df.insert(len(df.columns), f"in_cred_set_pop{i+1}", tmp3)
+
+        # rearrange pips_me to the last rows
+    if n_pop > 1:
+        tmp1 = df.pop("pips_me")
+        tmp2 = df.pop("in_cred_set_me")
+        df.insert(len(df.columns), "pips_me", tmp1)
+        df.insert(len(df.columns), "in_cred_set_me", tmp2)
+
+    return df
 
 def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogeneity=False,
             max_genes=3, ridge=0.1, prior_prob=1e-3, credible_level=0.9, plot=False):
@@ -730,7 +748,8 @@ def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogenei
         (pandas.DataFrame, list of plot-objects) if plot=True
     """
     log = logging.getLogger(pf.LOG)
-    log.info(f"Starting fine-mapping at region {block}")
+    log.info(f"Fine-mapping starts at region {block}.")
+    # import pdb; pdb.set_trace()
 
     # align all GWAS, LD reference, and overlapping molecular weights
     n_pop = len(gwas)
@@ -739,9 +758,9 @@ def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogenei
     wmat = [None] * n_pop
     meta_data = [None] * n_pop
     ldmat = [None] * n_pop
-    # import pdb; pdb.set_trace()
+    #
     for i in range(n_pop):
-        log.info(f"Aligning GWAS, LD, and eQTL weights for {num_convert(i+1)} population. It will skip this region if following errors occur.")
+        log.info(f"Aligning GWAS, LD, and eQTL weights for {num_convert(i+1)} population. Region {block} will skip if following errors occur.")
         parameters_tmp = align_data(gwas_copy[i], ref_geno[i], wcollection[i], ridge=ridge)
         if parameters_tmp is None:
             # break; logging of specific reason should be in align_data
@@ -763,7 +782,7 @@ def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogenei
         log.info(f"Find {len(gene_set)} common genes to be fine-mapped at region {block}.")
 
     # foo columns to get the index
-    gene_set["foo"] = "foo"
+    gene_set.insert(len(gene_set.columns), "foo", "foo")
     for i in range(n_pop):
         df_tmp = pd.merge(meta_data[i], gene_set, how = "left", on = gene_identifier)
         idx = df_tmp[pd.notna(df_tmp.foo)].index
@@ -806,7 +825,7 @@ def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogenei
     attr = [None] * n_pop
     region = [None] * n_pop
     for i in range(n_pop):
-        session_tmp = pf.get_session(i)
+        session_tmp = pf.get_session(idx = i)
         attr_tmp = pd.read_sql(session_tmp.query(pf.ModelAttribute)
                         .filter(pf.ModelAttribute.model_id.in_(meta_data[i].model_id.values.astype(object)))  # why doesn't inte64 work!?!
                         .statement, con=session_tmp.connection())
@@ -820,7 +839,6 @@ def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogenei
     # dont sort here to make plotting easier
 
     df = me_create_output(meta_data, attr, null_res, region)
-
     # Output the partition blocks in which focus performs
     df.insert(0, "block", block)
 
@@ -831,9 +849,11 @@ def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogenei
 
         # sort here and create credible set
         df = me_add_credible_set(df, credible_set=credible_level)
+        df = rearrange_columns(df)
         return df, plot_arr
 
     else:
         # sort here and create credible set
         df = me_add_credible_set(df, credible_set=credible_level)
+        df = rearrange_columns(df)
         return df
