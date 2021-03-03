@@ -978,18 +978,22 @@ def run_me_twas(args):
 
                     # only fine-map regions that contain GWAS signal
                     if min(local_gwas_tmp.P) >= args.p_threshold:
-                        log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at region {block} at {df_paths[i]}.")
+                        # The idea is for single pop, it gives warning skipping message later
+                        # For multiple pops, it gives no GWAS info here, and give warning skipping message later
+                        if n_pop != 1:
+                            log.info(f"No GWAS SNPs with p-value < {args.p_threshold} found at region {block} at {df_paths[i]}.")
                         ct += 1
                     local_gwas[i] = local_gwas_tmp
 
                 if skip:
                     continue
 
-                if ct == n_pop and n_pop == 1:
+                if ct == n_pop:
                     # Make sure no duplicated warnings for single pop
-                    continue
-                elif ct == n_pop:
-                    log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at region {block} for all popluations. Skipping.")
+                    if n_pop != 1:
+                        log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at region {block} for all popluations. Skipping.")
+                    else:
+                        log.warning(f"No GWAS SNPs with p-value < {args.p_threshold} found at region {block} at {df_paths[0]}. Skipping.")
                     continue
                 elif ct != 0 and bool(args.all_gwas_sig):
                     log.warning(f"At least one popluation (n={ct} out of {n_pop}) has no GWAS SNPs with p-value < {args.p_threshold} found at region {block} while all_gwas_sig parameter is specified True. Skipping.")
@@ -1046,7 +1050,8 @@ def run_me_twas(args):
                 # fine-map, my dudes
                 result = pyfocus.me_fine_map(local_gwas, snp_weights, local_ref, block, intercept=args.intercept,
                                           max_genes=args.max_genes, ridge=args.ridge_term, prior_prob=args.prior_prob,
-                                          credible_level=args.credible_level, plot=args.plot)
+                                          credible_level=args.credible_level, plot=args.plot, min_r2pred=args.min_r2pred,
+                                          max_impute=args.max_impute)
 
                 # fine-map can break and return early if there are issues so check for non-None result
                 if result is not None:
@@ -1062,7 +1067,7 @@ def run_me_twas(args):
     except Exception as err:
         log.error(err)
     finally:
-        log.info("Finished twas & fine-mapping")
+        log.info("Finished TWAS & fine-mapping. Thanks for using FOCUS, and have a nice day!")
 
     return 0
 
@@ -1182,7 +1187,7 @@ def build_weights(args):
             y, X, G, snp_info, gene_info = train_data
 
             # fit predictive model using specified method
-            log.info(f"Performing {gene_info["geneid"]} model inference")
+            log.info(f"Performing {gene_info['geneid']} model inference")
             result = pyfocus.train_model(y, X, G, args.method, args.include_ses, args.p_threshold)
 
             if result is None:
@@ -1397,6 +1402,10 @@ def build_mefocus_parser(subp):
                      help="Prior probability for a gene to be causal.")
     mefmp.add_argument("--credible-level", type=parse_prob, default=0.9,
                      help="Probability value to determine the credible gene set.")
+    mefmp.add_argument("--min-r2pred", type=float, default=0.7,
+                     help="Minimum average LD-based imputation accuracy allowed for expression weight SNP Z-scores. Default is 0.7")
+    mefmp.add_argument("--max-impute", type=float, default=0.5,
+                     help="Maximum fraction of SNPs allowed to be missing per gene (will be imputed using LD).")
 
     # plotting options
     mefmp.add_argument("-p", "--plot", action="store_true", default=False,

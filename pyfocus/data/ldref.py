@@ -145,6 +145,11 @@ class LDRefPanel(object):
         merged_snps = pd.merge(gwas, df, how="inner", left_on=pf.GWAS.SNPCOL, right_on=pf.LDRefPanel.SNPCOL)
         return merged_snps
 
+    def overlap_gwas2(self, gwas):
+        df = self._snp_info
+        merged_snps = pd.merge(gwas, df, how="right", left_on=pf.GWAS.SNPCOL, right_on=pf.LDRefPanel.SNPCOL)
+        return merged_snps
+
     def get_geno(self, snps=None):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=FutureWarning)

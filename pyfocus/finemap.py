@@ -170,16 +170,6 @@ def me_create_output(meta_data, attr, null_res, region):
                 raise ValueError(f"Cannot column binds output due to different rows for populations.")
                 return None
 
-    # attention to rows index of pip
-    # for i in range(n_pop):
-    #     df[f"twas_z_pop{i+1}"] = zscores[i]
-    #     df[f"pip_pop{i+1}"] = pips[i]
-    #     df[f"in_cred_set_pop{i+1}"] = 0
-    #     df[f"region_pop{i+1}"] = region[i]
-    #     if i == (n_pop - 1) and i > 0:
-    #         df[f"pip_me"] = pips[i+1]
-    #         df[f"in_cred_set_me"] = 0
-
     # sort by tx start site and we're good to go
     df = df.sort_values(by="tx_start")
 
@@ -219,12 +209,10 @@ def me_create_output(meta_data, attr, null_res, region):
 def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     """
     Align and merge gwas, LD reference, and eQTL weight data to the same reference alleles.
-
     :param gwas: pyfocus.GWAS object containing a risk region
     :param ref_geno:  pyfocus.LDRefPanel object containing reference genotypes at risk region
     :param wcollection: pandas.DataFrame object containing overlapping eQTL weights
     :param ridge: ridge adjustment for LD estimation (default = 0.1)
-
     :return: tuple of aligned GWAS, eQTL weight-matrix W, gene-names list, LD-matrix V
     """
     log = logging.getLogger(pf.LOG)
@@ -232,7 +220,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
     # align gwas with ref snps
     merged_snps = ref_geno.overlap_gwas(gwas)
     if len(merged_snps) == 0:
-        log.info("No overlap between LD reference and GWAS.")
+        log.info("No overlap between LD reference and GWAS")
         return None
 
     ref_snps = merged_snps.loc[~pd.isna(merged_snps.i)]
@@ -244,7 +232,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
                                      ref_snps[pf.LDRefPanel.A2COL])
     n_miss = sum(np.logical_not(matched))
     if n_miss > 0:
-        log.debug(f"Pruned {n_miss} SNPs due to invalid allele pairs between GWAS/RefPanel.")
+        log.debug("Pruned {} SNPs due to invalid allele pairs between GWAS/RefPanel.".format(n_miss))
 
     ref_snps = ref_snps.loc[matched]
 
@@ -256,7 +244,148 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
                                              ref_snps[pf.LDRefPanel.A2COL])
 
     # collapse the gene models into a single weight matrix
+    idxs = []
+    final_df = None
+    for eid, model in wcollection.groupby(["ens_gene_id", "tissue", "inference", "ref_name"]):
+        log.debug("Aligning weights for gene {}".format(eid))
 
+        # merge local model with the reference panel
+        # effect_allele alt_allele effect
+        m_merged = pd.merge(ref_snps, model, how="inner", left_on=pf.GWAS.SNPCOL, right_on="snp")
+
+        m_matched = pf.check_valid_alleles(m_merged["effect_allele"],
+                                           m_merged["alt_allele"],
+                                           m_merged[pf.LDRefPanel.A1COL],
+                                           m_merged[pf.LDRefPanel.A2COL])
+
+        n_miss = sum(np.logical_not(m_matched))
+        if n_miss > 0:
+            log.debug("Gene {} pruned {} SNPs due to invalid allele pairs between weight-db/GWAS.".format(eid, n_miss))
+
+        m_merged = m_merged.loc[m_matched]
+
+        # make sure effects are for same ref allele as GWAS + reference panel
+        m_merged["effect"] = pf.flip_alleles(m_merged["effect"].values,
+                                             m_merged["effect_allele"],
+                                             m_merged["alt_allele"],
+                                             m_merged[pf.LDRefPanel.A1COL],
+                                             m_merged[pf.LDRefPanel.A2COL])
+
+        # skip genes whose overlapping weights are all 0s
+        if len(m_merged) > 1 and all(np.isclose(m_merged["effect"], 0)):
+            log.debug("Gene {} has only zero-weights. This will break variance estimate. Skipping.".format(eid))
+            continue
+
+        # skip genes that do not have weights at referenced SNPs
+        if all(pd.isnull(m_merged["effect"])):
+            log.debug("Gene {} has no overlapping weights. Skipping.".format(eid))
+            continue
+
+        # keep model_id around to grab other attributes (pred-R2, etc) later on
+        cur_idx = model.index[0]
+        idxs.append(cur_idx)
+
+        # perform a union (outer merge) to build the aligned/flipped weight (possibly jagged) matrix
+        if final_df is None:
+            final_df = m_merged[[pf.GWAS.SNPCOL, "effect"]]
+            final_df = final_df.rename(index=str, columns={"effect": "model_{}".format(cur_idx)})
+        else:
+            final_df = pd.merge(final_df, m_merged[[pf.GWAS.SNPCOL, "effect"]], how="outer", on="SNP")
+            final_df = final_df.rename(index=str, columns={"effect": "model_{}".format(cur_idx)})
+
+    # break out early
+    if len(idxs) == 0:
+        log.info("No weights overlapped GWAS data")
+        return None
+
+    # final align back with GWAS + reference panel
+    ref_snps = pd.merge(ref_snps, final_df, how="inner", on=pf.GWAS.SNPCOL)
+
+    # compute linkage-disequilibrium estimate
+    log.debug("Estimating LD for {} SNPs".format(len(ref_snps)))
+    ldmat = ref_geno.estimate_ld(ref_snps, adjust=ridge)
+
+    # subset down to just actual GWAS data
+    gwas = ref_snps[pf.GWAS.REQ_COLS]
+
+    # need to replace NA with 0 due to jaggedness across genes
+    wmat = ref_snps.filter(like="model").values
+    wmat[np.isnan(wmat)] = 0.0
+
+    # Meta-data on the current model
+    # what other things should we include in here?
+    meta_data = wcollection.loc[idxs,
+                                ["ens_gene_id", "ens_tx_id", "mol_name", "tissue", "ref_name", "type", "chrom", "tx_start",
+                                "tx_stop", "inference", "model_id"]
+    ]
+
+    # re-rorder by tx_start
+    ranks = np.argsort(meta_data["tx_start"].values)
+    wmat = wmat.T[ranks].T
+    meta_data = meta_data.iloc[ranks]
+
+    return gwas, wmat, meta_data, ldmat
+
+def impute_gwas(gwas, ld_ref, min_r2pred, max_impute):
+
+
+
+    return
+
+def me_align_data(gwas, ref_geno, wcollection, min_r2pred=0.7, max_impute=0.5, ridge=0.1):
+    """
+    Align and merge gwas, LD reference, and eQTL weight data to the same reference alleles.
+
+    :param gwas: pyfocus.GWAS object containing a risk region
+    :param ref_geno:  pyfocus.LDRefPanel object containing reference genotypes at risk region
+    :param wcollection: pandas.DataFrame object containing overlapping eQTL weights
+    :param ridge: ridge adjustment for LD estimation (default = 0.1)
+
+    :return: tuple of aligned GWAS, eQTL weight-matrix W, gene-names list, LD-matrix V
+    """
+    log = logging.getLogger(pf.LOG)
+    # import pdb; pdb.set_trace()
+
+    # align gwas with ref snps
+    merged_snps = ref_geno.overlap_gwas2(gwas)
+
+    if pd.isna(merged_snps[pf.GWAS.SNPCOL]).all():
+        log.warning("No overlap between LD reference and GWAS. Skipping.")
+        return None
+
+    # to make sure no NA in LD Ref
+    ref_snps = merged_snps.loc[~pd.isna(merged_snps.i)]
+
+    # ref_snps.iloc[0,3] = "G"
+
+    # filter out mis-matched SNPs
+    # have to create another function called check_valid_alleles2
+    # we don't want to remove the NA values because we need to impute later
+    matched = pf.check_valid_alleles(ref_snps[pf.GWAS.A1COL],
+                                     ref_snps[pf.GWAS.A2COL],
+                                     ref_snps[pf.LDRefPanel.A1COL],
+                                     ref_snps[pf.LDRefPanel.A2COL])
+    n_miss = sum(np.logical_not(matched))
+    if n_miss > 0:
+        log.debug(f"Pruned {n_miss} SNPs due to invalid allele pairs between GWAS/RefPanel.")
+
+    ref_snps = ref_snps.loc[matched]
+
+    # flip Zscores to match reference panel
+    # we need to create another function because
+    # we need to also keep the SNPs have NA A1 A2 value, so that we can impute later
+    ref_snps[pf.GWAS.ZCOL] = pf.flip_alleles2(ref_snps[pf.GWAS.ZCOL].values,
+                                             ref_snps[pf.GWAS.A1COL],
+                                             ref_snps[pf.GWAS.A2COL],
+                                             ref_snps[pf.LDRefPanel.A1COL],
+                                             ref_snps[pf.LDRefPanel.A2COL])
+
+    # Re-assign in case there are NA GWAS value
+    ref_snps[pf.GWAS.SNPCOL] = ref_snps[pf.LDRefPanel.SNPCOL]
+    ref_snps[pf.GWAS.A1COL] = ref_snps[pf.LDRefPanel.A1COL]
+    ref_snps[pf.GWAS.A2COL] = ref_snps[pf.LDRefPanel.A2COL]
+
+    # collapse the gene models into a single weight matrix
     idxs = []
     final_df = None
     for eid, model in wcollection.groupby(["ens_gene_id", "tissue", "inference", "ref_name"]):
@@ -285,7 +414,7 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
                                              m_merged[pf.LDRefPanel.A2COL])
 
         # skip genes whose overlapping weights are all 0s
-        if len(m_merged) > 1 and all(np.isclose(m_merged["effect"], 0)):
+        if len(m_merged) > 0 and all(np.isclose(m_merged["effect"], 0)):
             log.debug(f"Gene {eid} has only zero-weights. This will break variance estimate. Skipping.")
             continue
 
@@ -308,15 +437,63 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
 
     # break out early
     if len(idxs) == 0:
-        log.info("No weights overlapped GWAS data")
+        log.warning("No weights overlapped GWAS data. Skipping.")
         return None
 
     # final align back with GWAS + reference panel
     ref_snps = pd.merge(ref_snps, final_df, how="inner", on=pf.GWAS.SNPCOL)
+    import pdb; pdb.set_trace()
+
+    ref_snps.loc[80:, "Z"] = float("nan")
 
     # compute linkage-disequilibrium estimate
     log.debug(f"Estimating LD for {len(ref_snps)} SNPs.")
     ldmat = ref_geno.estimate_ld(ref_snps, adjust=ridge)
+
+    # Run ImpG-Summary when GWAS statistics are not available for SNPs available in LD Ref
+    miss_idx = ref_snps[pd.isna(ref_snps[pf.GWAS.ZCOL])].index
+    nmiss_idx = ref_snps[pd.notna(ref_snps[pf.GWAS.ZCOL])].index
+
+    # first step is to remove genes if number of untyped SNPs 
+    n_miss_gwas = len(miss_gwas_index)
+    n_total = len(ref_snps)
+
+    if n_miss_gwas / n_total > max_impute:
+        log.warning(f"{round(n_miss_gwas / n_total, 4)} ({n_miss_gwas} out of {n_total}) of Z scores in LD reference is missing in GWAS summary statistics, which is less than default {max_impute}. Skipping.")
+        return None
+
+    if n_miss_gwas > 0:
+        log.info(f"Found {n_miss_gwas} GWAS SS are missing, but in the LD reference panel. Imputing them using ImpG-Summary.")
+
+        tmp = lin.inv(ldmat[nmiss_idx].T[nmiss_idx].T + 0.1 * np.eye(len(nmiss_idx)))
+        impu_wgt = np.dot(ldmat[miss_idx].T[nmiss_idx].T, tmp)
+        impu_z = np.dot(impu_wgt, ref_snps[pf.GWAS.ZCOL][nmiss_idx])
+        r2_pred = np.diagonal(mdot([tmp_wgt, ldmat[nmiss_idx].T[nmiss_idx].T, impu_wgt.T]))
+        ref_snps.loc[miss_idx, pf.GWAS.ZCOL] = impu_z / np.sqrt(r2_pred)
+
+        still_miss = np.sum(pd.isna(ref_snps[pf.GWAS.ZCOL]))
+        if still_miss > 0:
+            log.warning(f"Found {still_miss} GWAS SS are still missing. Prune them.")
+            ref_snps = ref_snps.loc[pd.notna(ref_snps[pf.GWAS.ZCOL])]
+
+        # Remove genes that have too many GWAS imputation
+        all_r2pred = np.array([1] * len(ref_snps), np.float)
+        all_r2pred[miss_idx] = r2_pred
+
+        rem_idx = []
+        for i in range(len(idxs)):
+            notna_index = ref_snps[f"model_{idxs[i]}"].loc[pd.notna(ref_snps[f"model_{idxs[i]}"])].index
+            mean_r2 = np.mean(all_r2pred[notna_index])
+            gene_name = wcollection.loc[idxs[0]]["mol_name"]
+            if mean_r2 < min_r2pred:
+                log.warning(f"{gene_name} has mean GWAS Z-score imputation r2 of {mean_r2}, which is less than the default {min_r2pred}. Removing this gene.")
+                # need to remove it from idxs (for meta data) and ref_snps (for wmat)
+                # track the index here
+                rem_idx.append(i)
+
+        idxs = [j for i, j in enumerate(idxs) if i not in rem_idx]
+        for i in rem_idx:
+            ref_snps = ref_snps.drop(f"model_{i}", axis = 1)
 
     # subset down to just actual GWAS data
     gwas = ref_snps[pf.GWAS.REQ_COLS]
@@ -639,11 +816,6 @@ def calculate_pips(meta_data, wmat, ldmat, max_genes, prior_prob, intercept):
         wcor[i] = wcor_tmp
         swld[i] = swld_tmp
 
-    # check if we need to me-focus
-    # if n_pop == 1:
-    #     null_res = [None]
-    # else:
-    #     null_res = [None] * (n_pop + 1)
     null_res = [None] if n_pop == 1 else [None] * (n_pop + 1)
     m = len(meta_data[0])
     rm = range(m)
@@ -728,7 +900,8 @@ def rearrange_columns(df):
     return df
 
 def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogeneity=False,
-            max_genes=3, ridge=0.1, prior_prob=1e-3, credible_level=0.9, plot=False):
+            max_genes=3, ridge=0.1, prior_prob=1e-3, credible_level=0.9, plot=False, max_impute=0.5,
+            min_r2pred=0.7):
     """
     Perform a TWAS and fine-map the results.
 
@@ -758,16 +931,17 @@ def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogenei
     wmat = [None] * n_pop
     meta_data = [None] * n_pop
     ldmat = [None] * n_pop
-    #
+
     for i in range(n_pop):
         log.info(f"Aligning GWAS, LD, and eQTL weights for {num_convert(i+1)} population. Region {block} will skip if following errors occur.")
-        parameters_tmp = align_data(gwas_copy[i], ref_geno[i], wcollection[i], ridge=ridge)
+        parameters_tmp = me_align_data(gwas_copy[i], ref_geno[i], wcollection[i], ridge=ridge, max_impute=max_impute, min_r2pred=min_r2pred)
         if parameters_tmp is None:
             # break; logging of specific reason should be in align_data
             return None
         else:
             gwas[i], wmat[i], meta_data[i], ldmat[i] = parameters_tmp
 
+    # import pdb; pdb.set_trace()
     # Get common genes-tissue pair across populations
     # assume to use ens_gene_id, tissue, and model_id to be identifier
     gene_identifier = ["ens_gene_id", "tissue", "model_id"]
@@ -780,6 +954,7 @@ def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogenei
         return
     else:
         log.info(f"Find {len(gene_set)} common genes to be fine-mapped at region {block}.")
+    # import pdb; pdb.set_trace()
 
     # foo columns to get the index
     gene_set.insert(len(gene_set.columns), "foo", "foo")
