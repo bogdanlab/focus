@@ -140,14 +140,10 @@ class LDRefPanel(object):
 
         return LDRefPanel(snps, self._sample_info, self._geno)
 
-    def overlap_gwas(self, gwas):
+    def overlap_gwas(self, gwas, enable_impg = False):
         df = self._snp_info
-        merged_snps = pd.merge(gwas, df, how="inner", left_on=pf.GWAS.SNPCOL, right_on=pf.LDRefPanel.SNPCOL)
-        return merged_snps
-
-    def overlap_gwas2(self, gwas):
-        df = self._snp_info
-        merged_snps = pd.merge(gwas, df, how="right", left_on=pf.GWAS.SNPCOL, right_on=pf.LDRefPanel.SNPCOL)
+        how = "inner" if not enable_impg else "right"
+        merged_snps = pd.merge(gwas, df, how=how, left_on=pf.GWAS.SNPCOL, right_on=pf.LDRefPanel.SNPCOL)
         return merged_snps
 
     def get_geno(self, snps=None):

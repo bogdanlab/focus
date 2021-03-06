@@ -326,12 +326,6 @@ def align_data(gwas, ref_geno, wcollection, ridge=0.1):
 
     return gwas, wmat, meta_data, ldmat
 
-def impute_gwas(gwas, ld_ref, min_r2pred, max_impute):
-
-
-
-    return
-
 def me_align_data(gwas, ref_geno, wcollection, min_r2pred=0.7, max_impute=0.5, ridge=0.1):
     """
     Align and merge gwas, LD reference, and eQTL weight data to the same reference alleles.
@@ -347,7 +341,7 @@ def me_align_data(gwas, ref_geno, wcollection, min_r2pred=0.7, max_impute=0.5, r
     # import pdb; pdb.set_trace()
 
     # align gwas with ref snps
-    merged_snps = ref_geno.overlap_gwas2(gwas)
+    merged_snps = ref_geno.overlap_gwas(gwas, enable_impg = True)
 
     if pd.isna(merged_snps[pf.GWAS.SNPCOL]).all():
         log.warning("No overlap between LD reference and GWAS. Skipping.")
@@ -364,7 +358,9 @@ def me_align_data(gwas, ref_geno, wcollection, min_r2pred=0.7, max_impute=0.5, r
     matched = pf.check_valid_alleles(ref_snps[pf.GWAS.A1COL],
                                      ref_snps[pf.GWAS.A2COL],
                                      ref_snps[pf.LDRefPanel.A1COL],
-                                     ref_snps[pf.LDRefPanel.A2COL])
+                                     ref_snps[pf.LDRefPanel.A2COL],
+                                     enable_impg = True)
+
     n_miss = sum(np.logical_not(matched))
     if n_miss > 0:
         log.debug(f"Pruned {n_miss} SNPs due to invalid allele pairs between GWAS/RefPanel.")
@@ -374,11 +370,12 @@ def me_align_data(gwas, ref_geno, wcollection, min_r2pred=0.7, max_impute=0.5, r
     # flip Zscores to match reference panel
     # we need to create another function because
     # we need to also keep the SNPs have NA A1 A2 value, so that we can impute later
-    ref_snps[pf.GWAS.ZCOL] = pf.flip_alleles2(ref_snps[pf.GWAS.ZCOL].values,
+    ref_snps[pf.GWAS.ZCOL] = pf.flip_alleles(ref_snps[pf.GWAS.ZCOL].values,
                                              ref_snps[pf.GWAS.A1COL],
                                              ref_snps[pf.GWAS.A2COL],
                                              ref_snps[pf.LDRefPanel.A1COL],
-                                             ref_snps[pf.LDRefPanel.A2COL])
+                                             ref_snps[pf.LDRefPanel.A2COL],
+                                             enable_impg = True)
 
     # Re-assign in case there are NA GWAS value
     ref_snps[pf.GWAS.SNPCOL] = ref_snps[pf.LDRefPanel.SNPCOL]
@@ -395,10 +392,21 @@ def me_align_data(gwas, ref_geno, wcollection, min_r2pred=0.7, max_impute=0.5, r
         # effect_allele alt_allele effect
         m_merged = pd.merge(ref_snps, model, how="inner", left_on=pf.GWAS.SNPCOL, right_on="snp")
 
+        if len(m_merged) == 0:
+            log.debug(f"Gene {eid} has no overlapping weights. Skipping.")
+            continue
+
+        # if the percentage of untyped SNP GWAS SS is more than default max_impute, skip.
+        if np.sum(pd.isna(m_merged[pf.GWAS.ZCOL])) / len(m_merged) > max_impute:
+            log.debug(f"Gene {eid} has {len(pd.isna(m_merged[pf.GWAS.ZCOL]))} out of {len(m_merged)} non-overlapping GWAS Z scores, which is less than the default max_impute {max_impute}. Skipping.")
+            continue
+
+        # here, it has nothing to do with GWAS columns, so emable_impg set to False
         m_matched = pf.check_valid_alleles(m_merged["effect_allele"],
                                            m_merged["alt_allele"],
                                            m_merged[pf.LDRefPanel.A1COL],
-                                           m_merged[pf.LDRefPanel.A2COL])
+                                           m_merged[pf.LDRefPanel.A2COL],
+                                           enable_impg = False)
 
         n_miss = sum(np.logical_not(m_matched))
         if n_miss > 0:
@@ -407,11 +415,13 @@ def me_align_data(gwas, ref_geno, wcollection, min_r2pred=0.7, max_impute=0.5, r
         m_merged = m_merged.loc[m_matched]
 
         # make sure effects are for same ref allele as GWAS + reference panel
+        # here, it has nothing to do with GWAS columns, so emable_impg set to False
         m_merged["effect"] = pf.flip_alleles(m_merged["effect"].values,
                                              m_merged["effect_allele"],
                                              m_merged["alt_allele"],
                                              m_merged[pf.LDRefPanel.A1COL],
-                                             m_merged[pf.LDRefPanel.A2COL])
+                                             m_merged[pf.LDRefPanel.A2COL],
+                                             enable_impg = False)
 
         # skip genes whose overlapping weights are all 0s
         if len(m_merged) > 0 and all(np.isclose(m_merged["effect"], 0)):
@@ -454,44 +464,36 @@ def me_align_data(gwas, ref_geno, wcollection, min_r2pred=0.7, max_impute=0.5, r
     miss_idx = ref_snps[pd.isna(ref_snps[pf.GWAS.ZCOL])].index
     nmiss_idx = ref_snps[pd.notna(ref_snps[pf.GWAS.ZCOL])].index
 
-    # first step is to remove genes if number of untyped SNPs 
-    n_miss_gwas = len(miss_gwas_index)
-    n_total = len(ref_snps)
-
-    if n_miss_gwas / n_total > max_impute:
-        log.warning(f"{round(n_miss_gwas / n_total, 4)} ({n_miss_gwas} out of {n_total}) of Z scores in LD reference is missing in GWAS summary statistics, which is less than default {max_impute}. Skipping.")
-        return None
-
-    if n_miss_gwas > 0:
-        log.info(f"Found {n_miss_gwas} GWAS SS are missing, but in the LD reference panel. Imputing them using ImpG-Summary.")
+    if len(miss_idx) > 0:
+        log.info(f"Found {len(miss_idx)} GWAS SS are missing, but in the LD reference panel. Imputing them using ImpG-Summary.")
 
         tmp = lin.inv(ldmat[nmiss_idx].T[nmiss_idx].T + 0.1 * np.eye(len(nmiss_idx)))
         impu_wgt = np.dot(ldmat[miss_idx].T[nmiss_idx].T, tmp)
         impu_z = np.dot(impu_wgt, ref_snps[pf.GWAS.ZCOL][nmiss_idx])
-        r2_pred = np.diagonal(mdot([tmp_wgt, ldmat[nmiss_idx].T[nmiss_idx].T, impu_wgt.T]))
+        r2_pred = np.diagonal(mdot([impu_wgt, ldmat[nmiss_idx].T[nmiss_idx].T, impu_wgt.T]))
         ref_snps.loc[miss_idx, pf.GWAS.ZCOL] = impu_z / np.sqrt(r2_pred)
 
-        still_miss = np.sum(pd.isna(ref_snps[pf.GWAS.ZCOL]))
-        if still_miss > 0:
-            log.warning(f"Found {still_miss} GWAS SS are still missing. Prune them.")
-            ref_snps = ref_snps.loc[pd.notna(ref_snps[pf.GWAS.ZCOL])]
-
-        # Remove genes that have too many GWAS imputation
+        # Remove genes that have too many GWAS imputation or have SNPs whose GWAS SS could not be imputed
         all_r2pred = np.array([1] * len(ref_snps), np.float)
         all_r2pred[miss_idx] = r2_pred
-
+        # track the index for removal genes
         rem_idx = []
         for i in range(len(idxs)):
-            notna_index = ref_snps[f"model_{idxs[i]}"].loc[pd.notna(ref_snps[f"model_{idxs[i]}"])].index
-            mean_r2 = np.mean(all_r2pred[notna_index])
+            notna_snps = ref_snps[f"model_{idxs[i]}"].loc[pd.notna(ref_snps[f"model_{idxs[i]}"])]
+            # we want to only look at those SNPs that have actual weights
+            mean_r2 = np.mean(all_r2pred[notna_snps.index])
             gene_name = wcollection.loc[idxs[0]]["mol_name"]
             if mean_r2 < min_r2pred:
-                log.warning(f"{gene_name} has mean GWAS Z-score imputation r2 of {mean_r2}, which is less than the default {min_r2pred}. Removing this gene.")
-                # need to remove it from idxs (for meta data) and ref_snps (for wmat)
-                # track the index here
-                rem_idx.append(i)
+                log.warning(f"{gene_name} has mean GWAS Z-score imputation r2 of {mean_r2}, which is less than the default {min_r2pred}. Skipping.")
+                rem_idx.append(idxs[i])
+                continue
+            notna_gwas = ref_snps.iloc[notna_snps.index][pf.GWAS.ZCOL]
+            if np.sum(pd.isna(notna_gwas)) > 0:
+                log.warning(f"{gene_name} has missing GWAS Z-scores that could not be imputed. Skipping.")
+                rem_idx.append(idxs[i])
 
-        idxs = [j for i, j in enumerate(idxs) if i not in rem_idx]
+        # need to remove it from idxs (for meta data) and ref_snps (for wmat)
+        idxs = [j for j in idxs if j not in rem_idx]
         for i in rem_idx:
             ref_snps = ref_snps.drop(f"model_{i}", axis = 1)
 
