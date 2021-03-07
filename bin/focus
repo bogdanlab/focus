@@ -925,9 +925,7 @@ def run_me_twas(args):
                     err_str = f"No reference LD SNPs found at chromosome {chrom} at {df_refs[i]}."
                     raise Exception(err_str)
 
-        # log.info("Preparing weight database.")
-        # not the best approach, but load_db creates an empty db if the file does not exist
-        # so check here that we actually -have- some db
+
         df_dbs = args.weights.split(":")
 
         if len(df_dbs) != n_pop:
@@ -935,6 +933,8 @@ def run_me_twas(args):
 
         session = [None] * n_pop
         for i in range(n_pop):
+            # not the best approach, but load_db creates an empty db if the file does not exist
+            # so check here that we actually -have- some db
             if not os.path.isfile(df_dbs[i]):
                 raise ValueError(f"Cannot find database at {df_dbs[i]}.")
 
@@ -967,7 +967,6 @@ def run_me_twas(args):
                 local_gwas = [None] * n_pop
                 skip = False
                 ct = 0
-                # import pdb; pdb.set_trace()
                 for i in range(n_pop):
                     local_gwas_tmp = gwas[i].subset_by_pos(chrom, start=start, stop=stop)
                     # only fine-map regions that contain GWAS data
@@ -1041,6 +1040,8 @@ def run_me_twas(args):
                 if skip:
                     continue
 
+                tissue_pr_gene = True if args.tissue is not None else False
+
                 if args.tissue is not None:
                     for i in range(n_pop):
                         log.info(f"Prioritizing genes by {args.tissue} tissue then on predictive performance at region {local_ref[i]} of {df_refs[i]}.")
@@ -1051,7 +1052,7 @@ def run_me_twas(args):
                 result = pyfocus.me_fine_map(local_gwas, snp_weights, local_ref, block, intercept=args.intercept,
                                           max_genes=args.max_genes, ridge=args.ridge_term, prior_prob=args.prior_prob,
                                           credible_level=args.credible_level, plot=args.plot, min_r2pred=args.min_r2pred,
-                                          max_impute=args.max_impute)
+                                          max_impute=args.max_impute, tissue_pr_gene = tissue_pr_gene)
 
                 # fine-map can break and return early if there are issues so check for non-None result
                 if result is not None:
@@ -1060,7 +1061,6 @@ def run_me_twas(args):
                         for i, plot in enumerate(plots):
                             fig_name = f"{args.output}.chr{chrom}.{int(start)}.{int(stop)}.pdf"
                             plot.savefig(fig_name, format='pdf', dpi=300)
-                    # import pdb; pdb.set_trace()
                     pyfocus.write_output(result, output, append=written)
                     written = True
 
@@ -1110,7 +1110,7 @@ def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", s
         attr = attrs[attrs.model_id == local_mid]
 
         if metric not in attr.attr_name.values:
-            log.warning("Gene {} does not have {} and cannot evaluate performance. Skipping.".format(eid, metric))
+            log.warning(f"Gene {eid} does not have {metric} and cannot evaluate performance. Skipping.")
             continue
 
         # if there are multiple models for a gene we need to select the prioritized tissue first
@@ -1403,9 +1403,9 @@ def build_mefocus_parser(subp):
     mefmp.add_argument("--credible-level", type=parse_prob, default=0.9,
                      help="Probability value to determine the credible gene set.")
     mefmp.add_argument("--min-r2pred", type=float, default=0.7,
-                     help="Minimum average LD-based imputation accuracy allowed for expression weight SNP Z-scores. Default is 0.7")
+                     help="Minimum average LD-based imputation accuracy allowed for expression weight SNP Z-scores.")
     mefmp.add_argument("--max-impute", type=float, default=0.5,
-                     help="Maximum fraction of SNPs allowed to be missing per gene (will be imputed using LD).")
+                     help="Maximum fraction of SNPs allowed to be missing per gene, and will be imputed using LD.")
 
     # plotting options
     mefmp.add_argument("-p", "--plot", action="store_true", default=False,
