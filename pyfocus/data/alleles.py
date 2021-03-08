@@ -59,6 +59,7 @@ def check_valid_alleles(gwas_a1, gwas_a2, ref_a1, ref_a2, enable_impg = False):
     :param gwas_a2: pandas column for the A2 allele in GWAS data
     :param ref_a1: pandas column for the A1 allele in LDRefPanel data
     :param ref_a2: pandas column for the A2 allele in LDRefPanel data
+    :param enable_impg: boolean indicator for whether allowing GWAS data to be NA
 
     :return: pandas boolean column indicating if alleles match or not
     """
@@ -78,6 +79,7 @@ def flip_alleles(zscores, gwas_a1, gwas_a2, ref_a1, ref_a2, enable_impg = False)
     :param gwas_a2: pandas column for the A2 allele in GWAS data
     :param ref_a1: pandas column for the A1 allele in LDRefPanel data
     :param ref_a2: pandas column for the A2 allele in LDRefPanel data
+    :param enable_impg: boolean indicator for whether allowing GWAS data to be NA
 
     :return: numpy.ndarray of sign-aligned zscores
 

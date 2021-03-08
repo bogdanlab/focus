@@ -44,7 +44,6 @@ def me_add_credible_set(df, credible_set=0.9):
 
     :return: pandas.DataFrame containing TWAS summary results augmented with `in_cred_set` flag
     """
-    # import pdb; pdb.set_trace()
     n_pips = np.sum(df.columns.str.contains("pips"))
 
     for i in range(n_pips):
@@ -124,8 +123,6 @@ def me_create_output(meta_data, attr, null_res, region):
 
     :param meta_data: pandas.DataFrame Metadata about the gene models
     :param attr: pandas.DataFrame Prediction performance metadata about gene models
-    :param zscores: numpy.ndarray of TWAS zscores
-    :param pips: numpy.ndarray of posterior inclusion probabilities (PIPs)
     :param null_res: float posterior probability of the null
     :param region: str region identifier
 
@@ -135,10 +132,6 @@ def me_create_output(meta_data, attr, null_res, region):
     n_pop = len(meta_data)
     join_col = ["ens_gene_id", "tissue", "model_id"]
     pick_col = ["ens_gene_id", "tissue", "model_id", "inference", "cv.R2", "cv.R2.pval", "inter_z", "twas_z", "pips"]
-    # ori_col = ["ens_gene_id", "ens_tx_id", "mol_name", "tissue", "ref_name", "type chrom", "tx_start", "tx_stop",
-    #            "inference", "model_id", "cv.R2", "cv.R2.pval", "inter_z", "twas_z", "pips"]
-    import pdb; pdb.set_trace()
-    # import pdb; pdb.set_trace()
     for i in range(n_pop):
         df_tmp = pd.merge(meta_data[i], attr[i], left_on="model_id", right_index=True)
         if i != 0:
@@ -773,14 +766,23 @@ def fine_map(gwas, wcollection, ref_geno, intercept=False, heterogeneity=False, 
         return df
 
 def calculate_pips(meta_data, wmat, ldmat, max_genes, prior_prob, intercept):
+    """
+    Calculate Posterior Inclusion Probability (PIPs)
+
+    :param meta_data: pandas.DataFrame Metadata about the gene models (including Z scores)
+    :param wmat: numpy.ndarray eQTL weight matrix for a risk region
+    :param ldmat: numpy.ndarray LD matrix for a risk region
+    :param max_genes: int or None the maximum number of genes to include in any given causal configuration. None if all genes
+    :param prior_prob: float prior probability for a gene to be causal
+    :param intercept: bool to return the intercept variable or not
+
+    :return: meta data with PIPs, null PIPs, and Expression correlation matrix
+    """
     log = logging.getLogger(pf.LOG)
-
     n_pop = len(meta_data)
-    # Calculate prior chisq
-    # TODO replace PINV with solve
 
+    # Calculate prior chisq
     prior_chisq = [None] * n_pop
-    # import pdb; pdb.set_trace()
     for i in range(n_pop):
         wcor, swld = estimate_cor(wmat[i], ldmat[i], intercept = False)
         solution, resid, rank_wcor, svs = lin.lstsq(wcor, np.asarray(meta_data[i]["twas_z"]))
@@ -981,7 +983,7 @@ def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogenei
 
     # calculate pips for single pop, and me.
     log.info(f"Calculating PIPs.")
-    meta_data, null_res = calculate_pips(meta_data, wmat, ldmat, max_genes, prior_prob, intercept)
+    meta_data, null_res, wcor = calculate_pips(meta_data, wmat, ldmat, max_genes, prior_prob, intercept)
 
     # Query the db to grab model attributes
     # We might want to filter to only certain attributes at some point
@@ -1010,7 +1012,7 @@ def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogenei
     log.info(f"Completed fine-mapping at region {block}.")
     if plot:
         log.info(f"Creating FOCUS plots at region {block}.")
-        plot_arr = pf.focus_plot(wcor, df)
+        plot_arr = pf.me_focus_plot(wcor, df)
 
         # sort here and create credible set
         df = me_add_credible_set(df, credible_set=credible_level)
