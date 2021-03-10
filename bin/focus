@@ -1041,7 +1041,6 @@ def run_me_twas(args):
                     continue
 
                 tissue_pr_gene = True if args.tissue is not None else False
-
                 if args.tissue is not None:
                     for i in range(n_pop):
                         log.info(f"Prioritizing genes by {args.tissue} tissue then on predictive performance at region {local_ref[i]} of {df_refs[i]}.")
@@ -1072,8 +1071,6 @@ def run_me_twas(args):
 
     return 0
 
-
-
 def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", strict=False):
     """
     Reduce the set of models to a unique set of genes. If a gene has multiple models, the function first tries
@@ -1091,7 +1088,6 @@ def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", s
     :return: pandas.DataFrame tissue-prioritized snp_weights for downstream TWAS + fine-mapping
     """
     log = logging.getLogger(pyfocus.LOG)
-
     keep = dict()
     score = dict()
     tissue_type = dict()
@@ -1117,6 +1113,11 @@ def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", s
         # if there are multiple models for a gene we need to select the prioritized tissue first
         # and if it isn't represented select the model with best metric (e.g., cv.R2, h2g, etc.)
         metric_value = attr[attr.attr_name == metric]["value"].values[0]
+
+        if pd.isna(metric_value):
+            log.warning(f"Gene {eid} havs NA {metric} and cannot evaluate performance. Skipping.")
+            continue
+
         if eid not in keep:
             keep[eid] = model
             score[eid] = metric_value
@@ -1154,7 +1155,10 @@ def get_tissue_prioritized_genes(snp_weights, tissue, session, metric="cv.R2", s
                 score[eid] = metric_value
                 tissue_type[eid] = mtissue
 
-    snp_weights = pd.concat(keep.values())
+    if len(keep.values()) != 0:
+        snp_weights = pd.concat(keep.values())
+    else:
+        raise ValueError(f"No genes have valid weights. It might be the case that database's evaluation metrics have NA value.")
 
     return snp_weights
 
@@ -1385,7 +1389,7 @@ def build_mefocus_parser(subp):
                       help="Path to a BED file containing windows (e.g., CHR START STOP) to fine-map over. Start and stop values may contain kb/mb modifiers. Or use default independent regions by specifying '37:EUR', '37:AFR', '37:EAS', '37:EUR-AFR', '37:EUR-EAS', '37:EAS-AFR', '37:EUR-EAS-AFR', or '38:'-prefix regions.")
 
     # fine-map general options
-    mefmp.add_argument("--all-gwas-sig", default=False,
+    mefmp.add_argument("--all-gwas-sig", action="store_true",
                      help="Boolean indicator for whether fine-mapping regions that contains GWAS signal for all population; False means GWAS signal for at least one population.")
     mefmp.add_argument("--tissue",
                      help="Name of tissue for tissue-prioritized fine-mapping. Relaxed matching. E.g., 'adipose' matches 'Adipose_subcutaneous'.")
