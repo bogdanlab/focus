@@ -941,7 +941,7 @@ def me_fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogenei
     # Get common genes (genes-tissue pair) across populations
     # if genes are not prioritized by tissue, use ens_gene_id, tissue, and model_id to be identifier
     # if genes are prioritized by tissue, use ens_gene_id, and model_id to be identifier
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     gene_identifier = ["ens_gene_id", "model_id", "ref_name"] if tissue_pr_gene else ["ens_gene_id", "model_id", "tissue", "ref_name"]
     gene_set = meta_data[0][gene_identifier]
     for i in range(n_pop - 1):
