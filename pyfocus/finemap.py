@@ -808,7 +808,7 @@ def calculate_pips(meta_data, wmat, ldmat, max_genes, prior_prob, intercept):
         # enumerate all subsets
         for subset in chain.from_iterable(combinations(rm, n) for n in range(1, k + 1)):
             local = 0
-            # if it's the case, we need to do Multi-Ethnic Fine-mapping
+            # if it's the case, we need to do Multi-ancestry Fine-mapping
             if i == (len(null_res)-1) and i > 0:
                 for j in range(n_pop):
                     local_bf, local_prior = bayes_factor(np.asarray(meta_data[j]["twas_z"]), subset, wcor[j], prior_chisq[j], prior_prob)
@@ -928,7 +928,13 @@ def fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogeneity=
     ldmat = [None] * n_pop
 
     for i in range(n_pop):
-        log.info(f"Aligning GWAS, LD, and eQTL weights for {num_convert(i+1)} population. Region {block} will skip if following errors occur.")
+
+        if n_pop == 1:
+            log.info(f"Aligning GWAS, LD, and eQTL weights for the single population. Region {block} will skip if following errors occur.")
+        else:
+            log.info(f"Aligning GWAS, LD, and eQTL weights for {num_convert(i+1)} population. Region {block} will skip if following errors occur.")
+
+
         parameters_tmp = align_data(gwas_copy[i], ref_geno[i], wcollection[i], ridge=ridge, max_impute=max_impute, min_r2pred=min_r2pred)
         if parameters_tmp is None:
             # break; logging of specific reason should be in align_data
@@ -961,7 +967,12 @@ def fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogeneity=
 
     # run local TWAS
     for i in range(n_pop):
-        log.info(f"Running TWAS for {num_convert(i + 1)} population.")
+
+        if n_pop == 1:
+            log.info(f"Running TWAS for the single population.")
+        else:
+            log.info(f"Running TWAS for {num_convert(i + 1)} population.")
+
         zscores_tmp = []
         for idx, weights in enumerate(wmat[i].T):
             log.debug(f"Computing TWAS association statistic for gene {meta_data[i].iloc[idx]['ens_gene_id']}.")

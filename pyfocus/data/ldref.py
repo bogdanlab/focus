@@ -22,7 +22,8 @@ dft_location = {"37:EUR": "ld_blocks/grch37.eur.loci.bed",
 "38:EUR-AFR": "ld_blocks/grch38.eur.afr.loci.bed",
 "38:EUR-EAS": "ld_blocks/grch38.eur.eas.loci.bed",
 "38:EAS-AFR": "ld_blocks/grch38.eas.afr.loci.bed",
-"38:EUR-EAS-AFR": "ld_blocks/grch38.eur.eas.afr.loci.bed"}
+"38:EUR-EAS-AFR": "ld_blocks/grch38.eur.eas.afr.loci.bed",
+"gencode": "gencode_map_v37.tsv"}
 
 class IndBlocks(object):
     """
@@ -39,19 +40,20 @@ class IndBlocks(object):
         if regions is None:
             raise ValueError("Please specify independent regions location or default regions with '37:EUR', etc.")
         else:
-            if type(regions) is str:
-                try:
-                    dtype_dict = {IndBlocks.CHRCOL: "category", IndBlocks.STARTCOL: int, IndBlocks.STOPCOL: int}
-                    local_ld_blocks = pkg_resources.resource_filename(__name__, dft_location[regions])
-                    self._regions = pd.read_csv(local_ld_blocks, delim_whitespace=True, dtype=dtype_dict)
-                except Exception as e:
-                    raise Exception("Fail population names specified. 'EUR', 'EUR-EAS', etc. for more values, check documentation." + str(e))
-            elif pf.is_file(regions):
-                try:
-                    dtype_dict = {IndBlocks.CHRCOL: "category", IndBlocks.STARTCOL: int, IndBlocks.STOPCOL: int}
-                    self._regions = pd.read_csv(regions, delim_whitespace=True, dtype=dtype_dict)
-                except Exception as e:
-                    raise Exception("Parsing LD blocks failed:" + str(e))
+            if type(regions) is str or pf.is_file(regions):
+                if regions in dft_location.keys():
+                    try:
+                        dtype_dict = {IndBlocks.CHRCOL: "category", IndBlocks.STARTCOL: int, IndBlocks.STOPCOL: int}
+                        local_ld_blocks = pkg_resources.resource_filename(__name__, dft_location[regions])
+                        self._regions = pd.read_csv(local_ld_blocks, delim_whitespace=True, dtype=dtype_dict)
+                    except Exception as e:
+                        raise Exception("Fail population names specified. 'EUR', 'EUR-EAS', etc. for more values, check documentation." + str(e))
+                else:
+                    try:
+                        dtype_dict = {IndBlocks.CHRCOL: "category", IndBlocks.STARTCOL: int, IndBlocks.STOPCOL: int}
+                        self._regions = pd.read_csv(regions, delim_whitespace=True, dtype=dtype_dict)
+                    except Exception as e:
+                        raise Exception("Parsing LD blocks failed:" + str(e))
             elif type(regions) is pd.core.frame.DataFrame:
                 self._regions = regions
 
@@ -108,17 +110,19 @@ class GencodeBlocks(object):
 
     def __init__(self, regions=None):
         if regions is None:
+            raise ValueError("Please specify gencode file location")
+        elif regions == "gencode":
             try:
-                dtype_dict = {GencodeBlocks.CHRCOL: "category", GencodeBlocks.STARTCOL: int, GencodeBlocks.STOPCOL: int, GencodeBlocks.GENENAME: string}
-                gencode_blocks = pkg_resources.resource_filename(__name__, "gencode_map_v37.tsv")
-                self._regions = pd.read_tsv(local_ld_blocks, dtype=dtype_dict)
+                dtype_dict = {GencodeBlocks.CHRCOL: "category", GencodeBlocks.STARTCOL: int, GencodeBlocks.STOPCOL: int, GencodeBlocks.GENENAME: str}
+                gencode_blocks = pkg_resources.resource_filename(__name__, dft_location[regions])
+                self._regions = pd.read_csv(gencode_blocks, dtype=dtype_dict, sep = "\t")
             except Exception as e:
-                raise Exception("Data folder doesn't containn gencode_map_v37.tsv" + str(e))
+                raise Exception("Data folder doesn't contain gencode_map_v37.tsv " + str(e))
         else:
             if pf.is_file(regions):
                 try:
-                    dtype_dict = {GencodeBlocks.CHRCOL: "category", GencodeBlocks.STARTCOL: int, GencodeBlocks.STOPCOL: int, GencodeBlocks.GENENAME: string}
-                    self._regions = pd.read_tsv(regions, dtype=dtype_dict)
+                    dtype_dict = {GencodeBlocks.CHRCOL: "category", GencodeBlocks.STARTCOL: int, GencodeBlocks.STOPCOL: int, GencodeBlocks.GENENAME: str}
+                    self._regions = pd.read_csv(regions, dtype=dtype_dict, sep='\t')
                 except Exception as e:
                     raise Exception("Parsing your own gencode file failed. Make sure the path is correct and column has chr, start, end, and gene_name:" + str(e))
             else:
@@ -136,15 +140,15 @@ class GencodeBlocks(object):
         if chrom is None or start is None or end is None:
             raise ValueError("chrom, start, or end argument cannot be `None` in subset_by_pos")
 
-        df = self._regions.loc[self._regions[GeneCodeBlocks.CHRCOL] == chrom &
-                                self._regions[GeneCodeBlocks.STARTCOL] >= start &
-                                self._regions[GeneCodeBlocks.STOPCOL] <= end]
+        df = self._regions.loc[(self._regions[GencodeBlocks.CHRCOL] == chrom) &
+                                (self._regions[GencodeBlocks.STARTCOL] >= start) &
+                                (self._regions[GencodeBlocks.STOPCOL] <= end)]
 
         if len(df) == 0:
-            raise Warning(f"No genes found on chromosome {chrom} between {start} and {end}. Use 1e-3 instead. This warning makes no sense please check your genecode file")
-            prior_prob=0.001
+            raise Warning(f"No genes found on chromosome {chrom} between {start} and {end}. Use 1e-3 instead. This warning makes no sense please check your gencode file")
+            prior_prob = 0.001
         else:
-            prior_prob = 1 / len(df.gene_code.unique())
+            prior_prob = 1 / len(df.gene_name.unique())
 
         return prior_prob
 

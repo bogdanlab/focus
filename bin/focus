@@ -866,8 +866,6 @@ def region_sanity_check(args_chr, args_start, args_stop):
 
 def run_twas(args):
     log = logging.getLogger(pyfocus.LOG)
-    # TODO
-    # 1. split region sanity check into a function
 
     try:
         # perform sanity arguments checking before continuing
@@ -972,14 +970,13 @@ def run_twas(args):
                     arg_prior_prob = float(args.prior_prob)
                     if arg_prior_prob > 0 and arg_prior_prob < 1:
                         prior_prob = 1 / arg_prior_prob
+                        log.info(f"Using fixed numeric prior probability {args.prior_prob}.")
                     else:
                         raise ValueError(f"Numeric prior probability {arg_prior_prob} is invalid.")
                 except ValueError:
-                    if args.prior_prob == "gencode":
-                        gencodeBlocks = pyfocus.GencodeBlocks()
-                        prior_prob = gencodeBlocks.subset_by_pos(chrom, start, stop)
-                    else:
-                        prior_prob = gencodeBlocks.subset_by_pos(chrom, start, stop)
+                    gencodeBlocks = pyfocus.GencodeBlocks(args.prior_prob)
+                    prior_prob = gencodeBlocks.subset_by_pos(chrom, start, stop)
+                    log.info(f"Using gencode file prior probability {prior_prob}.")
 
                 # grab local GWAS data
                 local_gwas = [None] * n_pop
@@ -1407,7 +1404,7 @@ def build_focus_parser(subp):
                       help="Path to a BED file containing windows (e.g., CHR START STOP) to fine-map over. Start and stop values may contain kb/mb modifiers. Or use default independent regions by specifying '37:EUR', '37:AFR', '37:EAS', '37:EUR-AFR', '37:EUR-EAS', '37:EAS-AFR', '37:EUR-EAS-AFR', or '38:'-prefix regions.")
 
     # fine-map general options
-    fmp.add_argument("--all-gwas-sig", action="store_true",
+    fmp.add_argument("--all-gwas-sig", default=False,
                      help="Boolean indicator for whether fine-mapping regions that contains GWAS signal for all population; False means GWAS signal for at least one population.")
     fmp.add_argument("--tissue",
                      help="Name of tissue for tissue-prioritized fine-mapping. Relaxed matching. E.g., 'adipose' matches 'Adipose_subcutaneous'.")
@@ -1421,12 +1418,12 @@ def build_focus_parser(subp):
                      help="Whether to include an intercept term in the model.")
     fmp.add_argument("--max-genes", type=parse_pint, default=3,
                      help="Maximum number of genes that can be causal.")
-    fmp.add_argument("--prior-prob-type", type=parse_prob, default="gencode",
-                     help="Type names of prior probability for a gene to be causal. 'gencode': use one over the number of all genes in the region based on gencode v37 (to use your own file, specify it in prior-prob-gencode). 'numeric': use a numeric number as fixed probability (specify it in prior-prob-numeric). ")
-    fmp.add_argument("--prior-prob-numeric", type=parse_prob, default=1e-3,
-                     help="Fixed prior probability for a gene to be causal.")
-    fmp.add_argument("--prior-prob-gencode", type=parse_prob, default=None,
-                     help="Location for your own gencode tsv file. It has to contain at least four columns with names 'chr', 'start', 'end', and 'gene_name'.")
+    fmp.add_argument("--prior-prob", default="gencode",
+                     help="Type names of prior probability for a gene to be causal. 'gencode': use one over the number of all genes in the region based on gencode v37 (to use your own file, specify instead. 'numeric': use a numeric number as fixed probability, just directly specify it e.g. 1e-3. ")
+    # fmp.add_argument("--prior-prob-numeric", type=parse_prob, default=1e-3,
+    #                  help="Fixed prior probability for a gene to be causal.")
+    # fmp.add_argument("--prior-prob-gencode", default=None,
+    #                  help="Location for your own gencode tsv file. It has to contain at least four columns with names 'chr', 'start', 'end', and 'gene_name'.")
     fmp.add_argument("--credible-level", type=parse_prob, default=0.9,
                      help="Probability value to determine the credible gene set.")
     fmp.add_argument("--min-r2pred", type=float, default=0.7,

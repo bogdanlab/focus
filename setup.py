@@ -14,7 +14,7 @@ st.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/mancusolab/focus",
     packages=st.find_packages(),
-    package_data={'pyfocus': ['data/ld_blocks/*.bed']},
+    package_data={'pyfocus': ['data/ld_blocks/*.bed', "data/gencode_map_v37.tsv"]},
     install_requires=[
         # this is the minimum to perform fine-mapping given a prebuilt db.
         # functions that require addtl modules will warn/raise error
