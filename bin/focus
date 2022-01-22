@@ -679,163 +679,163 @@ def munge(args):
 
     return
 
-def run_twas(args):
-    log = logging.getLogger(pyfocus.LOG)
-    try:
-        # perform sanity arguments checking before continuing
-        chrom = None
-        start_bp = None
-        stop_bp = None
-        if any(x is not None for x in [args.chr, args.start, args.stop]):
-            if args.start is not None and args.chr is None:
-                raise ValueError("Option --start cannot be set unless --chr is specified")
-            if args.stop is not None and args.chr is None:
-                raise ValueError("Option --stop cannot be set unless --chr is specified")
-
-            chrom = args.chr
-
-            # parse start/stop positions and make sure they're ordered (if exist)
-            if args.start is not None:
-                start_bp = parse_pos(args.start, "--start")
-            else:
-                start_bp = None
-
-            if args.stop is not None:
-                stop_bp = parse_pos(args.stop, "--stop")
-            else:
-                stop_bp = None
-
-            if args.start is not None and args.stop is not None:
-                if start_bp >= stop_bp:
-                    raise ValueError("Specified --start position must be before --stop position")
-
-        # load GWAS summary data
-        log.info("Preparing GWAS summary file")
-        gwas = pyfocus.GWAS.parse_gwas(args.gwas)
-
-        # if chrom is supplied just filter here
-        if chrom is not None:
-            gwas = gwas.subset_by_pos(chrom)
-            if len(gwas) == 0:
-                err_str = "No GWAS SNPs found at chromosome {}"
-                err_str = err_str.format(chrom)
-                raise Exception(err_str)
-
-        # load reference genotype data
-        log.info("Preparing reference SNP data")
-        ref = pyfocus.LDRefPanel.parse_plink(args.ref)
-
-        # if chrom is supplied just filter here
-        if chrom is not None:
-            ref = ref.subset_by_pos(chrom)
-            if len(ref) == 0:
-                err_str = "No reference LD SNPs found at chromosome {}"
-                err_str = err_str.format(chrom)
-                raise Exception(err_str)
-
-        log.info("Preparing weight database")
-        # not the best approach, but load_db creates an empty db if the file does not exist
-        # so check here that we actually -have- some db
-        if not os.path.isfile(args.weights):
-            raise ValueError("Cannot find database {}".format(args.weights))
-
-        session = pyfocus.load_db(args.weights)
-
-        # alias
-        Weight = pyfocus.Weight
-        Model = pyfocus.Model
-        MolecularFeature = pyfocus.MolecularFeature
-        RefPanel = pyfocus.RefPanel
-
-        with open("{}.focus.tsv".format(args.output), "w") as output:
-            if args.locations is not None:
-                log.info("Preparing user-defined locations")
-                partitions = pyfocus.IndBlocks(args.locations)
-            else:
-                partitions = pyfocus.IndBlocks()
-
-            if chrom is not None:
-                partitions = partitions.subset_by_pos(chrom, start_bp, stop_bp)
-
-            written = False
-            for region in partitions:
-                chrom, start, stop = region
-
-                # grab local GWAS data
-                local_gwas = gwas.subset_by_pos(chrom, start=start, stop=stop)
-
-                # only fine-map regions that contain GWAS signal
-                if len(local_gwas) == 0:
-                    warn_str = "No GWAS data found found at {}:{} - {}:{}. Skipping"
-                    log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
-                    continue
-
-                if min(local_gwas.P) >= args.p_threshold:
-                    warn_str = "No GWAS SNPs with p-value < {:.2g} found at {}:{} - {}:{}. Skipping"
-                    log.warning(warn_str.format(args.p_threshold, chrom, int(start), chrom, int(stop)))
-                    continue
-
-                # grab local reference genotype data
-                local_ref = ref.subset_by_pos(chrom, start=start, stop=stop)
-                if len(local_ref) == 0:
-                    warn_str = "No reference LD SNPs found at {}:{} - {}:{}. Skipping"
-                    log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
-                    continue
-
-                # grab local SNP weights
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", category=sa_exc.SAWarning)
-
-                    # sqlite has a limit of at most 999 parameters for queries
-                    # just split up the query into chunks and append at the end
-                    # its going to be slower, but not much we can do
-                    LIMIT = 999
-                    snp_weights = []
-                    for gwas_chunk in np.array_split(local_gwas, np.ceil(len(local_gwas) / LIMIT)):
-                        snp_weights.append(pd.read_sql(session.query(Weight, Model, MolecularFeature, RefPanel)
-                                                       .filter(Weight.snp.in_(gwas_chunk.SNP.values))
-                                                       .join(Model, Model.id == Weight.model_id)
-                                                       .join(MolecularFeature, MolecularFeature.id == Model.mol_id)
-                                                       .join(RefPanel, RefPanel.id == Model.ref_id)
-                                                       .statement, con=session.connection()))
-
-                    snp_weights = pd.concat(snp_weights, ignore_index=True)
-
-                # if there are no SNPs found in this region or none of the SNPs overlap the GWAS skip it
-                if len(snp_weights) == 0:
-                    warn_str = "No overlapping weights at {}:{} - {}:{}. Skipping"
-                    log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
-                    continue
-
-                if args.tissue is not None:
-                    info_str = "Prioritizing genes by {} tissue then on predictive performance at region {}"
-                    log.info(info_str.format(args.tissue, local_ref))
-                    snp_weights = get_tissue_prioritized_genes(snp_weights, args.tissue, session,
-                                                               metric="cv.R2", strict=args.strict_tissue)
-
-                # fine-map, my dudes
-                result = pyfocus.fine_map(local_gwas, snp_weights, local_ref, intercept=args.intercept,
-                                          max_genes=args.max_genes, ridge=args.ridge_term, prior_prob=args.prior_prob,
-                                          prior_chisq=args.prior_chisq, credible_level=args.credible_level,
-                                          plot=args.plot)
-
-                # fine-map can break and return early if there are issues so check for non-None result
-                if result is not None:
-                    if args.plot:
-                        result, plots = result
-                        for i, plot in enumerate(plots):
-                            fig_name = "{}.chr{}.{}.{}.pdf".format(args.output, chrom, int(start), int(stop))
-                            plot.savefig(fig_name, format='pdf', dpi=300)
-
-                    pyfocus.write_output(result, output, append=written)
-                    written = True
-
-    except Exception as err:
-        log.error(err)
-    finally:
-        log.info("Finished twas & fine-mapping")
-
-    return 0
+# def run_twas(args):
+#     log = logging.getLogger(pyfocus.LOG)
+#     try:
+#         # perform sanity arguments checking before continuing
+#         chrom = None
+#         start_bp = None
+#         stop_bp = None
+#         if any(x is not None for x in [args.chr, args.start, args.stop]):
+#             if args.start is not None and args.chr is None:
+#                 raise ValueError("Option --start cannot be set unless --chr is specified")
+#             if args.stop is not None and args.chr is None:
+#                 raise ValueError("Option --stop cannot be set unless --chr is specified")
+#
+#             chrom = args.chr
+#
+#             # parse start/stop positions and make sure they're ordered (if exist)
+#             if args.start is not None:
+#                 start_bp = parse_pos(args.start, "--start")
+#             else:
+#                 start_bp = None
+#
+#             if args.stop is not None:
+#                 stop_bp = parse_pos(args.stop, "--stop")
+#             else:
+#                 stop_bp = None
+#
+#             if args.start is not None and args.stop is not None:
+#                 if start_bp >= stop_bp:
+#                     raise ValueError("Specified --start position must be before --stop position")
+#
+#         # load GWAS summary data
+#         log.info("Preparing GWAS summary file")
+#         gwas = pyfocus.GWAS.parse_gwas(args.gwas)
+#
+#         # if chrom is supplied just filter here
+#         if chrom is not None:
+#             gwas = gwas.subset_by_pos(chrom)
+#             if len(gwas) == 0:
+#                 err_str = "No GWAS SNPs found at chromosome {}"
+#                 err_str = err_str.format(chrom)
+#                 raise Exception(err_str)
+#
+#         # load reference genotype data
+#         log.info("Preparing reference SNP data")
+#         ref = pyfocus.LDRefPanel.parse_plink(args.ref)
+#
+#         # if chrom is supplied just filter here
+#         if chrom is not None:
+#             ref = ref.subset_by_pos(chrom)
+#             if len(ref) == 0:
+#                 err_str = "No reference LD SNPs found at chromosome {}"
+#                 err_str = err_str.format(chrom)
+#                 raise Exception(err_str)
+#
+#         log.info("Preparing weight database")
+#         # not the best approach, but load_db creates an empty db if the file does not exist
+#         # so check here that we actually -have- some db
+#         if not os.path.isfile(args.weights):
+#             raise ValueError("Cannot find database {}".format(args.weights))
+#
+#         session = pyfocus.load_db(args.weights)
+#
+#         # alias
+#         Weight = pyfocus.Weight
+#         Model = pyfocus.Model
+#         MolecularFeature = pyfocus.MolecularFeature
+#         RefPanel = pyfocus.RefPanel
+#
+#         with open("{}.focus.tsv".format(args.output), "w") as output:
+#             if args.locations is not None:
+#                 log.info("Preparing user-defined locations")
+#                 partitions = pyfocus.IndBlocks(args.locations)
+#             else:
+#                 partitions = pyfocus.IndBlocks()
+#
+#             if chrom is not None:
+#                 partitions = partitions.subset_by_pos(chrom, start_bp, stop_bp)
+#
+#             written = False
+#             for region in partitions:
+#                 chrom, start, stop = region
+#
+#                 # grab local GWAS data
+#                 local_gwas = gwas.subset_by_pos(chrom, start=start, stop=stop)
+#
+#                 # only fine-map regions that contain GWAS signal
+#                 if len(local_gwas) == 0:
+#                     warn_str = "No GWAS data found found at {}:{} - {}:{}. Skipping"
+#                     log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
+#                     continue
+#
+#                 if min(local_gwas.P) >= args.p_threshold:
+#                     warn_str = "No GWAS SNPs with p-value < {:.2g} found at {}:{} - {}:{}. Skipping"
+#                     log.warning(warn_str.format(args.p_threshold, chrom, int(start), chrom, int(stop)))
+#                     continue
+#
+#                 # grab local reference genotype data
+#                 local_ref = ref.subset_by_pos(chrom, start=start, stop=stop)
+#                 if len(local_ref) == 0:
+#                     warn_str = "No reference LD SNPs found at {}:{} - {}:{}. Skipping"
+#                     log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
+#                     continue
+#
+#                 # grab local SNP weights
+#                 with warnings.catch_warnings():
+#                     warnings.simplefilter("ignore", category=sa_exc.SAWarning)
+#
+#                     # sqlite has a limit of at most 999 parameters for queries
+#                     # just split up the query into chunks and append at the end
+#                     # its going to be slower, but not much we can do
+#                     LIMIT = 999
+#                     snp_weights = []
+#                     for gwas_chunk in np.array_split(local_gwas, np.ceil(len(local_gwas) / LIMIT)):
+#                         snp_weights.append(pd.read_sql(session.query(Weight, Model, MolecularFeature, RefPanel)
+#                                                        .filter(Weight.snp.in_(gwas_chunk.SNP.values))
+#                                                        .join(Model, Model.id == Weight.model_id)
+#                                                        .join(MolecularFeature, MolecularFeature.id == Model.mol_id)
+#                                                        .join(RefPanel, RefPanel.id == Model.ref_id)
+#                                                        .statement, con=session.connection()))
+#
+#                     snp_weights = pd.concat(snp_weights, ignore_index=True)
+#
+#                 # if there are no SNPs found in this region or none of the SNPs overlap the GWAS skip it
+#                 if len(snp_weights) == 0:
+#                     warn_str = "No overlapping weights at {}:{} - {}:{}. Skipping"
+#                     log.warning(warn_str.format(chrom, int(start), chrom, int(stop)))
+#                     continue
+#
+#                 if args.tissue is not None:
+#                     info_str = "Prioritizing genes by {} tissue then on predictive performance at region {}"
+#                     log.info(info_str.format(args.tissue, local_ref))
+#                     snp_weights = get_tissue_prioritized_genes(snp_weights, args.tissue, session,
+#                                                                metric="cv.R2", strict=args.strict_tissue)
+#
+#                 # fine-map, my dudes
+#                 result = pyfocus.fine_map(local_gwas, snp_weights, local_ref, intercept=args.intercept,
+#                                           max_genes=args.max_genes, ridge=args.ridge_term, prior_prob=args.prior_prob,
+#                                           prior_chisq=args.prior_chisq, credible_level=args.credible_level,
+#                                           plot=args.plot)
+#
+#                 # fine-map can break and return early if there are issues so check for non-None result
+#                 if result is not None:
+#                     if args.plot:
+#                         result, plots = result
+#                         for i, plot in enumerate(plots):
+#                             fig_name = "{}.chr{}.{}.{}.pdf".format(args.output, chrom, int(start), int(stop))
+#                             plot.savefig(fig_name, format='pdf', dpi=300)
+#
+#                     pyfocus.write_output(result, output, append=written)
+#                     written = True
+#
+#     except Exception as err:
+#         log.error(err)
+#     finally:
+#         log.info("Finished twas & fine-mapping")
+#
+#     return 0
 
 def region_sanity_check(args_chr, args_start, args_stop):
     chrom = None
@@ -864,7 +864,7 @@ def region_sanity_check(args_chr, args_start, args_stop):
 
     return chrom, start_bp, stop_bp
 
-def run_me_twas(args):
+def run_twas(args):
     log = logging.getLogger(pyfocus.LOG)
     # TODO
     # 1. split region sanity check into a function
@@ -881,7 +881,7 @@ def run_me_twas(args):
         log.info(f"Detecting {n_pop} populations for fine-mapping.")
 
         if n_pop > 1:
-            log.info("As a result, running single-population FOCUS on each population, and then Multi-Ethnic FOCUS across all populations.")
+            log.info("As a result, running single-population FOCUS on each population, and then Multi-ancestry FOCUS across all populations.")
         else:
             log.info("As a result, running single-population FOCUS.")
 
@@ -963,6 +963,24 @@ def run_me_twas(args):
                 chrom, start, stop = region
                 block = f"{chrom}:{int(start)}-{chrom}:{int(stop)}"
                 log.info(f"Preparing data at region {block}. Skipping if following warning occurs.")
+
+                # Decide prior prob for a gene to be causal
+                log.info(f"Deciding prior probability for a gene to be causal.")
+
+                # conver prior_prob to float if it's float
+                try:
+                    arg_prior_prob = float(args.prior_prob)
+                    if arg_prior_prob > 0 and arg_prior_prob < 1:
+                        prior_prob = 1 / arg_prior_prob
+                    else:
+                        raise ValueError(f"Numeric prior probability {arg_prior_prob} is invalid.")
+                except ValueError:
+                    if args.prior_prob == "gencode":
+                        gencodeBlocks = pyfocus.GencodeBlocks()
+                        prior_prob = gencodeBlocks.subset_by_pos(chrom, start, stop)
+                    else:
+                        prior_prob = gencodeBlocks.subset_by_pos(chrom, start, stop)
+
                 # grab local GWAS data
                 local_gwas = [None] * n_pop
                 skip = False
@@ -1048,8 +1066,8 @@ def run_me_twas(args):
                                                                metric="cv.R2", strict=args.strict_tissue)
 
                 # fine-map, my dudes
-                result = pyfocus.me_fine_map(local_gwas, snp_weights, local_ref, block, intercept=args.intercept,
-                                          max_genes=args.max_genes, ridge=args.ridge_term, prior_prob=args.prior_prob,
+                result = pyfocus.fine_map(local_gwas, snp_weights, local_ref, block, intercept=args.intercept,
+                                          max_genes=args.max_genes, ridge=args.ridge_term, prior_prob=prior_prob,
                                           credible_level=args.credible_level, plot=args.plot, min_r2pred=args.min_r2pred,
                                           max_impute=args.max_impute, tissue_pr_gene = tissue_pr_gene)
 
@@ -1310,17 +1328,73 @@ def build_munge_parser(subp):
     return munp
 
 
+# def build_focus_parser(subp):
+#     # add imputation parser
+#     fmp = subp.add_parser("finemap", description="Perform a TWAS and fine-map regional results.")
+#
+#     # main arguments
+#     fmp.add_argument("gwas",
+#                      help="GWAS summary data. Supports gzip and bz2 compression.")
+#     fmp.add_argument("ref",
+#                      help="Path to reference panel PLINK data.")
+#     fmp.add_argument("weights",
+#                      help="Path to weights database.")
+#
+#     # fine-map location options
+#     fmp.add_argument("--chr", default=None,
+#                       help="Perform imputation for specific chromosome.")
+#     fmp.add_argument("--start", default=None,
+#                       help="Perform imputation starting at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
+#     fmp.add_argument("--stop", default=None,
+#                       help="Perform imputation until at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
+#     fmp.add_argument("--locations", default=None, type=argparse.FileType("r"),
+#                       help="Path to a BED file containing windows (e.g., CHR START STOP) to fine-map over." +
+#                            "Start and stop values may contain kb/mb modifiers.")
+#
+#     # fine-map general options
+#     fmp.add_argument("--tissue",
+#                      help="Name of tissue for tissue-prioritized fine-mapping. Relaxed matching. E.g., 'adipose' matches 'Adipose_subcutaneous'.")
+#     fmp.add_argument("--strict-tissue", action="store_true",
+#                      help="Use strict-matching of relevant tissue rather than relaxed match. E.g., 'adipose' does not match 'Adipose_subcutaneous'.")
+#     fmp.add_argument("--p-threshold", default=5e-8, type=float,
+#                      help="Minimum GWAS p-value required to perform TWAS fine-mapping.")
+#     fmp.add_argument("--ridge-term", default=0.1, type=float,
+#                      help="Diagonal adjustment for linkage-disequilibrium (LD) estimate.")
+#     fmp.add_argument("--intercept", action="store_true", default=False,
+#                      help="Whether to include an intercept term in the model.")
+#     fmp.add_argument("--max-genes", type=parse_pint, default=3,
+#                      help="Maximum number of genes that can be causal.")
+#     fmp.add_argument("--prior-prob", type=parse_prob, default=1e-3,
+#                      help="Prior probability for a gene to be causal.")
+#     fmp.add_argument("--prior-chisq", type=parse_chisq, default=40,
+#                      help="Prior sample-size-scaled variance for causal gene effect sizes.")
+#     fmp.add_argument("--credible-level", type=parse_prob, default=0.9,
+#                      help="Probability value to determine the credible gene set.")
+#
+#     # plotting options
+#     fmp.add_argument("-p", "--plot", action="store_true", default=False,
+#                      help="Generate fine-mapping plots.")
+#     # misc options
+#     fmp.add_argument("-q", "--quiet", default=False, action="store_true",
+#                       help="Do not print anything to stdout.")
+#     fmp.add_argument("--verbose", default=False, action="store_true",
+#                       help="Verbose logging. Includes debug info.")
+#     fmp.add_argument("-o", "--output", default="FOCUS",
+#                       help="Prefix for output data.")
+#
+#     return fmp
+
 def build_focus_parser(subp):
     # add imputation parser
-    fmp = subp.add_parser("finemap", description="Perform a TWAS and fine-map regional results.")
+    fmp = subp.add_parser("finemap", description="Perform TWAS and fine-map regional results using one population or multi-ancestry populations.")
 
     # main arguments
     fmp.add_argument("gwas",
-                     help="GWAS summary data. Supports gzip and bz2 compression.")
+                     help="GWAS summary data. Supports gzip and bz2 compression. Use semicolon to separete populations.")
     fmp.add_argument("ref",
-                     help="Path to reference panel PLINK data.")
+                     help="Path to reference panel PLINK data. Use semicolon to separete populations.")
     fmp.add_argument("weights",
-                     help="Path to weights database.")
+                     help="Path to weights database. Use semicolon to separete populations.")
 
     # fine-map location options
     fmp.add_argument("--chr", default=None,
@@ -1329,11 +1403,12 @@ def build_focus_parser(subp):
                       help="Perform imputation starting at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
     fmp.add_argument("--stop", default=None,
                       help="Perform imputation until at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
-    fmp.add_argument("--locations", default=None, type=argparse.FileType("r"),
-                      help="Path to a BED file containing windows (e.g., CHR START STOP) to fine-map over." +
-                           "Start and stop values may contain kb/mb modifiers.")
+    fmp.add_argument("--locations", default=None,
+                      help="Path to a BED file containing windows (e.g., CHR START STOP) to fine-map over. Start and stop values may contain kb/mb modifiers. Or use default independent regions by specifying '37:EUR', '37:AFR', '37:EAS', '37:EUR-AFR', '37:EUR-EAS', '37:EAS-AFR', '37:EUR-EAS-AFR', or '38:'-prefix regions.")
 
     # fine-map general options
+    fmp.add_argument("--all-gwas-sig", action="store_true",
+                     help="Boolean indicator for whether fine-mapping regions that contains GWAS signal for all population; False means GWAS signal for at least one population.")
     fmp.add_argument("--tissue",
                      help="Name of tissue for tissue-prioritized fine-mapping. Relaxed matching. E.g., 'adipose' matches 'Adipose_subcutaneous'.")
     fmp.add_argument("--strict-tissue", action="store_true",
@@ -1346,12 +1421,18 @@ def build_focus_parser(subp):
                      help="Whether to include an intercept term in the model.")
     fmp.add_argument("--max-genes", type=parse_pint, default=3,
                      help="Maximum number of genes that can be causal.")
-    fmp.add_argument("--prior-prob", type=parse_prob, default=1e-3,
-                     help="Prior probability for a gene to be causal.")
-    fmp.add_argument("--prior-chisq", type=parse_chisq, default=40,
-                     help="Prior sample-size-scaled variance for causal gene effect sizes.")
+    fmp.add_argument("--prior-prob-type", type=parse_prob, default="gencode",
+                     help="Type names of prior probability for a gene to be causal. 'gencode': use one over the number of all genes in the region based on gencode v37 (to use your own file, specify it in prior-prob-gencode). 'numeric': use a numeric number as fixed probability (specify it in prior-prob-numeric). ")
+    fmp.add_argument("--prior-prob-numeric", type=parse_prob, default=1e-3,
+                     help="Fixed prior probability for a gene to be causal.")
+    fmp.add_argument("--prior-prob-gencode", type=parse_prob, default=None,
+                     help="Location for your own gencode tsv file. It has to contain at least four columns with names 'chr', 'start', 'end', and 'gene_name'.")
     fmp.add_argument("--credible-level", type=parse_prob, default=0.9,
                      help="Probability value to determine the credible gene set.")
+    fmp.add_argument("--min-r2pred", type=float, default=0.7,
+                     help="Minimum average LD-based imputation accuracy allowed for expression weight SNP Z-scores.")
+    fmp.add_argument("--max-impute", type=float, default=0.5,
+                     help="Maximum fraction of SNPs allowed to be missing per gene, and will be imputed using LD.")
 
     # plotting options
     fmp.add_argument("-p", "--plot", action="store_true", default=False,
@@ -1365,65 +1446,6 @@ def build_focus_parser(subp):
                       help="Prefix for output data.")
 
     return fmp
-
-def build_mefocus_parser(subp):
-    # add imputation parser
-    mefmp = subp.add_parser("mefinemap", description="Perform a multi-ethnic TWAS and multi-ethinic fine-map regional results.")
-
-    # main arguments
-    mefmp.add_argument("gwas",
-                     help="GWAS summary data. Supports gzip and bz2 compression. Use semicolon to separete populations.")
-    mefmp.add_argument("ref",
-                     help="Path to reference panel PLINK data. Use semicolon to separete populations.")
-    mefmp.add_argument("weights",
-                     help="Path to weights database. Use semicolon to separete populations.")
-
-    # fine-map location options
-    mefmp.add_argument("--chr", default=None,
-                      help="Perform imputation for specific chromosome.")
-    mefmp.add_argument("--start", default=None,
-                      help="Perform imputation starting at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
-    mefmp.add_argument("--stop", default=None,
-                      help="Perform imputation until at specific location (in base pairs). Accepts kb/mb modifiers. Requires --chr to be specified.")
-    mefmp.add_argument("--locations", default=None,
-                      help="Path to a BED file containing windows (e.g., CHR START STOP) to fine-map over. Start and stop values may contain kb/mb modifiers. Or use default independent regions by specifying '37:EUR', '37:AFR', '37:EAS', '37:EUR-AFR', '37:EUR-EAS', '37:EAS-AFR', '37:EUR-EAS-AFR', or '38:'-prefix regions.")
-
-    # fine-map general options
-    mefmp.add_argument("--all-gwas-sig", action="store_true",
-                     help="Boolean indicator for whether fine-mapping regions that contains GWAS signal for all population; False means GWAS signal for at least one population.")
-    mefmp.add_argument("--tissue",
-                     help="Name of tissue for tissue-prioritized fine-mapping. Relaxed matching. E.g., 'adipose' matches 'Adipose_subcutaneous'.")
-    mefmp.add_argument("--strict-tissue", action="store_true",
-                     help="Use strict-matching of relevant tissue rather than relaxed match. E.g., 'adipose' does not match 'Adipose_subcutaneous'.")
-    mefmp.add_argument("--p-threshold", default=5e-8, type=float,
-                     help="Minimum GWAS p-value required to perform TWAS fine-mapping.")
-    mefmp.add_argument("--ridge-term", default=0.1, type=float,
-                     help="Diagonal adjustment for linkage-disequilibrium (LD) estimate.")
-    mefmp.add_argument("--intercept", action="store_true", default=False,
-                     help="Whether to include an intercept term in the model.")
-    mefmp.add_argument("--max-genes", type=parse_pint, default=3,
-                     help="Maximum number of genes that can be causal.")
-    mefmp.add_argument("--prior-prob", type=parse_prob, default=1e-3,
-                     help="Prior probability for a gene to be causal.")
-    mefmp.add_argument("--credible-level", type=parse_prob, default=0.9,
-                     help="Probability value to determine the credible gene set.")
-    mefmp.add_argument("--min-r2pred", type=float, default=0.7,
-                     help="Minimum average LD-based imputation accuracy allowed for expression weight SNP Z-scores.")
-    mefmp.add_argument("--max-impute", type=float, default=0.5,
-                     help="Maximum fraction of SNPs allowed to be missing per gene, and will be imputed using LD.")
-
-    # plotting options
-    mefmp.add_argument("-p", "--plot", action="store_true", default=False,
-                     help="Generate fine-mapping plots.")
-    # misc options
-    mefmp.add_argument("-q", "--quiet", default=False, action="store_true",
-                      help="Do not print anything to stdout.")
-    mefmp.add_argument("--verbose", default=False, action="store_true",
-                      help="Verbose logging. Includes debug info.")
-    mefmp.add_argument("-o", "--output", default="FOCUS",
-                      help="Prefix for output data.")
-
-    return mefmp
 
 
 def build_weights_parser(subp):
@@ -1519,11 +1541,11 @@ def main(argsv):
     munp = build_munge_parser(subp)
     munp.set_defaults(func=munge)
 
+    # fmp = build_focus_parser(subp)
+    # fmp.set_defaults(func=run_twas)
+
     fmp = build_focus_parser(subp)
     fmp.set_defaults(func=run_twas)
-
-    mefmp = build_mefocus_parser(subp)
-    mefmp.set_defaults(func=run_me_twas)
 
     # weight fitting within FOCUS is broken and not worth implementing
     # it is -much- easier to just us FUSION or PrediXcan to fit weights

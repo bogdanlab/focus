@@ -13,85 +13,85 @@ from scipy import stats
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 
-__all__ = ["focus_plot", "me_focus_plot"]
+# __all__ = ["focus_plot", "me_focus_plot"]
+__all__ = ["focus_plot"]
 
+# def make_scatter(twas_df):
+#     """
+#     Make a scatterplot of zscore values with gene names as xtick labels.
+#
+#     :param twas_df: pandas.DataFrame containing at least zscores and gene-names
+#
+#     :return: numpy.ndarray (RGB) formatted scatterplot of zscores
+#     """
+#     mpl.rcParams["figure.figsize"] = [6.4, 4.8]
+#     fig, ax = plt.subplots()
+#
+#     size_arr = []
+#     color_arr = []
+#     custom_palette = ["#e4f1fe", "#bdd7e7", "#6baed6", "#3182bd", "#08519c"]
+#     size_palette = [2, 4, 8, 10, 12]
+#
+#     for i, row in twas_df.iterrows():
+#         pip = row["pips_pop1"]
+#         if pip < 0.2:
+#             color_arr.append(custom_palette[0])
+#             size_arr.append(size_palette[0])
+#         elif 0.2 <= pip < 0.40:
+#             color_arr.append(custom_palette[1])
+#             size_arr.append(size_palette[1])
+#         elif 0.40 <= pip < 0.60:
+#             color_arr.append(custom_palette[2])
+#             size_arr.append(size_palette[2])
+#         elif 0.60 <= pip < 0.80:
+#             color_arr.append(custom_palette[3])
+#             size_arr.append(size_palette[3])
+#         else:
+#             color_arr.append(custom_palette[4])
+#             size_arr.append(size_palette[4])
+#
+#     n_rows = len(twas_df.index)
+#     x_values = np.arange(1, n_rows + 1)
+#     ax.scatter(x=x_values, y=twas_df["logp"].values, s=size_arr, c=color_arr, edgecolor="black")
+#
+#     # create legend
+#     legend_elements = [
+#         Line2D([0], [0], marker="o", color="w", label="[0.0, 0.2)",
+#                markerfacecolor=custom_palette[0], markersize=size_palette[0], markeredgecolor="k"),
+#         Line2D([1], [1], marker="o", color="w", label="[0.2, 0.4)",
+#                markerfacecolor=custom_palette[1], markersize=size_palette[1], markeredgecolor="k"),
+#         Line2D([2], [2], marker="o", color="w", label="[0.4, 0.6)",
+#                markerfacecolor=custom_palette[2], markersize=size_palette[2], markeredgecolor="k"),
+#         Line2D([3], [3], marker="o", color="w", label="[0.6, 0.8)",
+#                markerfacecolor=custom_palette[3], markersize=size_palette[3], markeredgecolor="k"),
+#         Line2D([4], [4], marker="o", color="w", label="[0.8, 1.0]",
+#                markerfacecolor=custom_palette[4], markersize=size_palette[4], markeredgecolor="k")]
+#     plt.legend(handles=legend_elements, loc="best", title="PIP")
+#
+#     n_rows = len(twas_df.index)
+#     gene_names = twas_df["mol_name"].values
+#
+#     plt.xticks(np.arange(1, n_rows + 1, 1.0))
+#     plt.xticks(x_values, labels=gene_names, rotation="vertical")
+#     plt.subplots_adjust(bottom=0.25)  # make room for xlabel
+#
+#     plt.ylabel("$-\log_{10}(p)$", fontsize=18)
+#     plt.xlabel("")
+#
+#     # drop right/top axis bars
+#     ax.spines["right"].set_visible(False)
+#     ax.spines["top"].set_visible(False)
+#
+#     fig.tight_layout()
+#     fig.canvas.draw()
+#
+#     # save as numpy.ndarray format
+#     data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep="")
+#     scatter_plot = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+#
+#     return scatter_plot
 
-def make_scatter(twas_df):
-    """
-    Make a scatterplot of zscore values with gene names as xtick labels.
-
-    :param twas_df: pandas.DataFrame containing at least zscores and gene-names
-
-    :return: numpy.ndarray (RGB) formatted scatterplot of zscores
-    """
-    mpl.rcParams["figure.figsize"] = [6.4, 4.8]
-    fig, ax = plt.subplots()
-
-    size_arr = []
-    color_arr = []
-    custom_palette = ["#e4f1fe", "#bdd7e7", "#6baed6", "#3182bd", "#08519c"]
-    size_palette = [2, 4, 8, 10, 12]
-
-    for i, row in twas_df.iterrows():
-        pip = row["pips_pop1"]
-        if pip < 0.2:
-            color_arr.append(custom_palette[0])
-            size_arr.append(size_palette[0])
-        elif 0.2 <= pip < 0.40:
-            color_arr.append(custom_palette[1])
-            size_arr.append(size_palette[1])
-        elif 0.40 <= pip < 0.60:
-            color_arr.append(custom_palette[2])
-            size_arr.append(size_palette[2])
-        elif 0.60 <= pip < 0.80:
-            color_arr.append(custom_palette[3])
-            size_arr.append(size_palette[3])
-        else:
-            color_arr.append(custom_palette[4])
-            size_arr.append(size_palette[4])
-
-    n_rows = len(twas_df.index)
-    x_values = np.arange(1, n_rows + 1)
-    ax.scatter(x=x_values, y=twas_df["logp"].values, s=size_arr, c=color_arr, edgecolor="black")
-
-    # create legend
-    legend_elements = [
-        Line2D([0], [0], marker="o", color="w", label="[0.0, 0.2)",
-               markerfacecolor=custom_palette[0], markersize=size_palette[0], markeredgecolor="k"),
-        Line2D([1], [1], marker="o", color="w", label="[0.2, 0.4)",
-               markerfacecolor=custom_palette[1], markersize=size_palette[1], markeredgecolor="k"),
-        Line2D([2], [2], marker="o", color="w", label="[0.4, 0.6)",
-               markerfacecolor=custom_palette[2], markersize=size_palette[2], markeredgecolor="k"),
-        Line2D([3], [3], marker="o", color="w", label="[0.6, 0.8)",
-               markerfacecolor=custom_palette[3], markersize=size_palette[3], markeredgecolor="k"),
-        Line2D([4], [4], marker="o", color="w", label="[0.8, 1.0]",
-               markerfacecolor=custom_palette[4], markersize=size_palette[4], markeredgecolor="k")]
-    plt.legend(handles=legend_elements, loc="best", title="PIP")
-
-    n_rows = len(twas_df.index)
-    gene_names = twas_df["mol_name"].values
-
-    plt.xticks(np.arange(1, n_rows + 1, 1.0))
-    plt.xticks(x_values, labels=gene_names, rotation="vertical")
-    plt.subplots_adjust(bottom=0.25)  # make room for xlabel
-
-    plt.ylabel("$-\log_{10}(p)$", fontsize=18)
-    plt.xlabel("")
-
-    # drop right/top axis bars
-    ax.spines["right"].set_visible(False)
-    ax.spines["top"].set_visible(False)
-
-    fig.tight_layout()
-    fig.canvas.draw()
-
-    # save as numpy.ndarray format
-    data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep="")
-    scatter_plot = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-
-    return scatter_plot
-
-def me_make_scatter(twas_df, idx = 1):
+def make_scatter(twas_df, idx = 1):
     """
     Make a scatterplot of zscore values with gene names as xtick labels.
 
@@ -239,40 +239,39 @@ def heatmap_colorbar():
 
     return colorbar
 
+# def focus_plot(wcor, twas_df):
+#     """
+#     Plot zscores and local correlation structure for TWAS fine-mapping.
+#     :param twas_df: pandas.DataFrame containing at least zscores and gene-names
+#     :param wcor: numpy.ndarray matrix of sample correlation structure for predicted expression
+#     :return: matplotlib.figure.Figure object containing plot of zscores and local correlation heatmap
+#     """
+#
+#     # filter out the null model
+#     twas_df = twas_df[twas_df["ens_gene_id"] != "NULL.MODEL"]
+#
+#     # add p-value to compute -log10 p
+#     twas_df = twas_df.assign(logp=-stats.chi2.logsf(twas_df["twas_z"].values ** 2, 1))
+#
+#     scatter_plot = make_scatter(twas_df)
+#     crop_img = heatmap(wcor)
+#     colorbar = heatmap_colorbar()
+#
+#     # combine plots
+#     numpy_vertical_concat = np.concatenate((scatter_plot, crop_img), axis=0)
+#     numpy_vertical_concat = np.concatenate((numpy_vertical_concat, colorbar), axis=0)
+#     numpy_vertical_concat = cv2.resize(numpy_vertical_concat, (0, 0), fx=2.5, fy=2.5)
+#
+#     fig = plt.figure()
+#     plt.imshow(numpy_vertical_concat)
+#     plt.title("")
+#     plt.axis("off")
+#     plot_arr = [fig]
+#     plt.close("all")
+#
+#     return plot_arr
+
 def focus_plot(wcor, twas_df):
-    """
-    Plot zscores and local correlation structure for TWAS fine-mapping.
-    :param twas_df: pandas.DataFrame containing at least zscores and gene-names
-    :param wcor: numpy.ndarray matrix of sample correlation structure for predicted expression
-    :return: matplotlib.figure.Figure object containing plot of zscores and local correlation heatmap
-    """
-
-    # filter out the null model
-    twas_df = twas_df[twas_df["ens_gene_id"] != "NULL.MODEL"]
-
-    # add p-value to compute -log10 p
-    twas_df = twas_df.assign(logp=-stats.chi2.logsf(twas_df["twas_z"].values ** 2, 1))
-
-    scatter_plot = make_scatter(twas_df)
-    crop_img = heatmap(wcor)
-    colorbar = heatmap_colorbar()
-
-    # combine plots
-    numpy_vertical_concat = np.concatenate((scatter_plot, crop_img), axis=0)
-    numpy_vertical_concat = np.concatenate((numpy_vertical_concat, colorbar), axis=0)
-    numpy_vertical_concat = cv2.resize(numpy_vertical_concat, (0, 0), fx=2.5, fy=2.5)
-
-    fig = plt.figure()
-    plt.imshow(numpy_vertical_concat)
-    plt.title("")
-    plt.axis("off")
-    plot_arr = [fig]
-    plt.close("all")
-
-    return plot_arr
-
-
-def me_focus_plot(wcor, twas_df):
     """
     Plot zscores and local correlation structure for TWAS fine-mapping.
 

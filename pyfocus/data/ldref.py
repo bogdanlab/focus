@@ -94,6 +94,67 @@ class IndBlocks(object):
     def show_nrow(self):
         return len(self._regions.index)
 
+class GencodeBlocks(object):
+    """
+    Class to wrap/iterate approximately gencode regions
+    """
+
+    CHRCOL = "chr"
+    STARTCOL = "start"
+    STOPCOL = "end"
+    GENENAME = "gene_name"
+
+    REQ_COLS = [CHRCOL, STARTCOL, STOPCOL, GENENAME]
+
+    def __init__(self, regions=None):
+        if regions is None:
+            try:
+                dtype_dict = {GencodeBlocks.CHRCOL: "category", GencodeBlocks.STARTCOL: int, GencodeBlocks.STOPCOL: int, GencodeBlocks.GENENAME: string}
+                gencode_blocks = pkg_resources.resource_filename(__name__, "gencode_map_v37.tsv")
+                self._regions = pd.read_tsv(local_ld_blocks, dtype=dtype_dict)
+            except Exception as e:
+                raise Exception("Data folder doesn't containn gencode_map_v37.tsv" + str(e))
+        else:
+            if pf.is_file(regions):
+                try:
+                    dtype_dict = {GencodeBlocks.CHRCOL: "category", GencodeBlocks.STARTCOL: int, GencodeBlocks.STOPCOL: int, GencodeBlocks.GENENAME: string}
+                    self._regions = pd.read_tsv(regions, dtype=dtype_dict)
+                except Exception as e:
+                    raise Exception("Parsing your own gencode file failed. Make sure the path is correct and column has chr, start, end, and gene_name:" + str(e))
+            else:
+                raise Exception("Please check your gencode file path" + str(e))
+
+            for column in IndBlocks.REQ_COLS:
+                if column not in self._regions:
+                    raise ValueError(f"{column}-column not found in regions.")
+
+            self._regions = self._regions[IndBlocks.REQ_COLS]
+
+        return
+
+    def subset_by_pos(self, chrom, start, end):
+        if chrom is None or start is None or end is None:
+            raise ValueError("chrom, start, or end argument cannot be `None` in subset_by_pos")
+
+        df = self._regions.loc[self._regions[GeneCodeBlocks.CHRCOL] == chrom &
+                                self._regions[GeneCodeBlocks.STARTCOL] >= start &
+                                self._regions[GeneCodeBlocks.STOPCOL] <= end]
+
+        if len(df) == 0:
+            raise Warning(f"No genes found on chromosome {chrom} between {start} and {end}. Use 1e-3 instead. This warning makes no sense please check your genecode file")
+            prior_prob=0.001
+        else:
+            prior_prob = 1 / len(df.gene_code.unique())
+
+        return prior_prob
+
+    def __iter__(self):
+        for row in self._regions.itertuples(name=None):
+            # drop the index
+            yield row[1:]
+
+        return
+
 class LDRefPanel(object):
     CHRCOL = "chrom"
     SNPCOL = "snp"
