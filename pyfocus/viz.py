@@ -292,7 +292,7 @@ def focus_plot(wcor, twas_df):
         tmp_p = -1 * stats.chi2.logsf(twas_df[f"twas_z_pop{i+1}"].values ** 2, 1)
         twas_df.insert(len(twas_df.columns), f"twas_p_pop{i+1}", tmp_p)
 
-        scatter_plot = me_make_scatter(twas_df, idx=i)
+        scatter_plot = make_scatter(twas_df, idx=i)
         crop_img = heatmap(wcor[i])
         colorbar = heatmap_colorbar()
 

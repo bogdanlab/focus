@@ -1,6 +1,6 @@
 FOCUS
 =====
-FOCUS (Fine-mapping Of CaUsal gene Sets) is software to fine-map transcriptome-wide association study statistics at genomic risk regions. The software takes as input summary GWAS data along with eQTL weights and outputs a credible set of _genes_ to explain observed genomic risk. 
+FOCUS (Fine-mapping Of CaUsal gene Sets) is software to fine-map transcriptome-wide association study statistics at genomic risk regions. The software takes as input summary GWAS data along with eQTL weights and outputs a credible set of _genes_ to explain observed genomic risk.
 
 This approach is described in,
 
@@ -11,7 +11,7 @@ Installing
 The easiest way to install is with pip:
 
     pip install pyfocus --user
-    
+
 Check that FOCUS was installed by typing
 
     focus --help
@@ -21,7 +21,7 @@ If that did not work, and `pip install pyfocus --user` was specified, please che
 by executing
 
     export PATH=`python -m site --user-base`/bin/:$PATH
-    
+
 which can be saved in `~/.bashrc` or `~/.bash_profile`. To reload the environment type `source ~/.bashrc` or `~/source .bash_profile` depending where you entered it.
 
 Alternatively you can download the latest repo and then use setuptools:
@@ -39,13 +39,15 @@ Example
 Here is an example of how to perform LDL fine-mapping while prioritizing predictive models from adipose tissues:
 
     focus finemap LDL_2010.clean.sumstats.gz 1000G.EUR.QC.1 gtex_v7.db --chr 1 --tissue adipose --out LDL_2010.chr1
-    
-This command will scan `LDL_2010.clean.sumstats.gz` for risk regions and then perform TWAS+fine-mapping using LD estimated from plink-formatted `1000G.EUR.QC.1` and eQTL weights from `gtex_v7.db`. 
+
+This command will scan `LDL_2010.clean.sumstats.gz` for risk regions and then perform TWAS+fine-mapping using LD estimated from plink-formatted `1000G.EUR.QC.1` and eQTL weights from `gtex_v7.db`.
 
 Please see the [wiki](https://github.com/bogdanlab/focus/wiki) for more details on how to use focus and links to database files.
 
 Notes
 -----
+Version 0.8: Adding MA-FOCUS support. Add GWAS imputation using imp-G
+
 Version 0.6.10: Fixed bug where weight database allele mismatch with GWAS broke infererence.
 
 Version 0.6.5: Fixed bug in newer versions of matplotlib not accepting string for colormaps. Fixed legend bug in plot. Fixed bug that mismatched string and category when supplying custom locations.

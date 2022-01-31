@@ -860,16 +860,18 @@ def num_convert(i):
 
     return nth[i]
 
-def rearrange_columns(df):
+def rearrange_columns(df, prior_prob):
     """
     Re-arrange FOCUS output table columns for better user experience.
 
     :param df: pandas.DataFrame containing all the necessary FOCUS columns
+    :param prioor_prob: float use this number to back the number of genes in the block 
 
     :return: pandas.DataFrame containing all the necessary FOCUS columns in order of non-pop-specific parameters, pop-specific non-pips parameters, pop-specific pips parameters, and me-pips parameters.
     """
     n_pop = np.sum(df.columns.str.contains("pips"))
     n_pop = 1 if n_pop == 1 else n_pop - 1
+    df["block_genes"] = 1 / prior_prob
     # move non-pop parameters upfront
     for i in range(n_pop):
         tmp = df.columns.str.contains(f"pop{i+1}")
@@ -1025,11 +1027,11 @@ def fine_map(gwas, wcollection, ref_geno, block, intercept=False, heterogeneity=
 
         # sort here and create credible set
         df = add_credible_set(df, credible_set=credible_level)
-        df = rearrange_columns(df)
+        df = rearrange_columns(df, prior_prob)
         return df, plot_arr
 
     else:
         # sort here and create credible set
         df = add_credible_set(df, credible_set=credible_level)
-        df = rearrange_columns(df)
+        df = rearrange_columns(df, prior_prob)
         return df
