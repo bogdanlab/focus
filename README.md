@@ -1,7 +1,7 @@
 FOCUS (DEPRECATED)
 ==================
 !!! This repository contains the original code and instructions for FOCUS. Please find the updated and maintained repository
-[HERE](www.github.com/mancusolab/ma-focus) !!!
+[HERE](http://www.github.com/mancusolab/ma-focus) !!!
 
 ------------------
 
