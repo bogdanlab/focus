@@ -1,6 +1,12 @@
-FOCUS
-=====
-FOCUS (Fine-mapping Of CaUsal gene Sets) is software to fine-map transcriptome-wide association study statistics at genomic risk regions. The software takes as input summary GWAS data along with eQTL weights and outputs a credible set of _genes_ to explain observed genomic risk. 
+FOCUS (DEPRECATED)
+==================
+!!! This repository contains the original code and instructions for FOCUS. Please find the updated and maintained repository
+[HERE](www.github.com/mancusolab/ma-focus) !!!
+
+------------------
+
+FOCUS (Fine-mapping Of CaUsal gene Sets) is software to fine-map transcriptome-wide association study statistics at genomic risk regions. 
+The software takes as input summary GWAS data along with eQTL weights and outputs a credible set of _genes_ to explain observed genomic risk. 
 
 This approach is described in,
 
